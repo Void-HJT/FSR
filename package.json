@@ -1,9 +1,9 @@
 {
-  "name": "isr",
+  "name": "fsr",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A local web and desktop app for previewing, ordering, and batch-renaming images.",
+  "description": "A local web and desktop app for filtering, ordering, and batch-renaming files.",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
@@ -44,9 +44,9 @@
     "wait-on": "^8.0.4"
   },
   "build": {
-    "appId": "com.local.isr",
-    "productName": "ISR",
-    "artifactName": "ISR.${ext}",
+    "appId": "com.local.fsr",
+    "productName": "FSR",
+    "artifactName": "FSR.${ext}",
     "directories": {
       "output": "release"
     },

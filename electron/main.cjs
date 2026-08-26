@@ -18,7 +18,7 @@ async function createWindow() {
     height: 940,
     minWidth: 960,
     minHeight: 680,
-    title: 'ISR',
+    title: 'FSR',
     autoHideMenuBar: true,
     backgroundColor: '#f5f4ef',
     webPreferences: {

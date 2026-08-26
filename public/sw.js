@@ -1,4 +1,4 @@
-const CACHE_NAME = 'isr-pwa-v1'
+const CACHE_NAME = 'fsr-pwa-v1'
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
 
 self.addEventListener('install', (event) => {

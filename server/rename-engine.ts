@@ -1,12 +1,12 @@
 import { access, rename } from 'node:fs/promises'
 import path from 'node:path'
-import type { StoredImage } from './types.js'
+import type { StoredFile } from './types.js'
 
 const INVALID_PREFIX = /[\\/:*?"<>|]/
 
 export interface RenameOptions {
   folderPath: string
-  images: StoredImage[]
+  files: StoredFile[]
   prefix: string
   startNumber: number
   padding: number
@@ -39,7 +39,7 @@ export function validatePrefix(prefix: string): string {
   return value
 }
 
-export async function renameImages(options: RenameOptions): Promise<RenameResult[]> {
+export async function renameFiles(options: RenameOptions): Promise<RenameResult[]> {
   const prefix = validatePrefix(options.prefix)
   if (!Number.isInteger(options.startNumber) || options.startNumber < 0) {
     throw new Error('起始编号必须是大于或等于 0 的整数。')
@@ -47,19 +47,19 @@ export async function renameImages(options: RenameOptions): Promise<RenameResult
   if (!Number.isInteger(options.padding) || options.padding < 0 || options.padding > 12) {
     throw new Error('补零位数必须是 0 到 12 之间的整数。')
   }
-  if (options.images.length === 0) throw new Error('没有可重命名的图片。')
+  if (options.files.length === 0) throw new Error('没有可重命名的文件。')
 
-  const sourceKeys = new Set(options.images.map((image) => pathKey(image.absolutePath)))
-  const operations = options.images.map((image, index) => {
+  const sourceKeys = new Set(options.files.map((file) => pathKey(file.absolutePath)))
+  const operations = options.files.map((file, index) => {
     const number = String(options.startNumber + index).padStart(options.padding, '0')
-    const targetName = `${prefix}${number}${image.extension}`
+    const targetName = `${prefix}${number}${file.extension}`
     return {
-      source: image.absolutePath,
-      originalName: image.name,
+      source: file.absolutePath,
+      originalName: file.name,
       target: path.join(options.folderPath, targetName),
       targetName,
-      temp: path.join(options.folderPath, `.image-renamer-${crypto.randomUUID()}${image.extension}`),
-      current: image.absolutePath,
+      temp: path.join(options.folderPath, `.fsr-${crypto.randomUUID()}${file.extension}`),
+      current: file.absolutePath,
     }
   })
 
@@ -87,7 +87,7 @@ export async function renameImages(options: RenameOptions): Promise<RenameResult
     const rollbackLocations: Array<{ operation: (typeof operations)[number]; location: string }> = []
     for (const operation of operations) {
       if (operation.current !== operation.source && (await exists(operation.current))) {
-        const location = path.join(options.folderPath, `.image-renamer-rollback-${crypto.randomUUID()}${path.extname(operation.current)}`)
+        const location = path.join(options.folderPath, `.fsr-rollback-${crypto.randomUUID()}${path.extname(operation.current)}`)
         await rename(operation.current, location).catch(() => undefined)
         rollbackLocations.push({ operation, location })
       }

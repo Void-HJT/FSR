@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { renameImages, validatePrefix } from './rename-engine.js'
-import type { StoredImage } from './types.js'
+import { renameFiles, validatePrefix } from './rename-engine.js'
+import type { StoredFile } from './types.js'
 
 const temporaryFolders: string[] = []
 
@@ -11,7 +11,7 @@ afterEach(async () => {
   await Promise.all(temporaryFolders.splice(0).map((folder) => rm(folder, { recursive: true, force: true })))
 })
 
-async function image(folder: string, name: string, content: string): Promise<StoredImage> {
+async function file(folder: string, name: string, content: string): Promise<StoredFile> {
   const absolutePath = path.join(folder, name)
   await writeFile(absolutePath, content)
   const fileStat = await stat(absolutePath)
@@ -22,20 +22,21 @@ async function image(folder: string, name: string, content: string): Promise<Sto
     size: fileStat.size,
     createdAt: fileStat.birthtimeMs,
     modifiedAt: fileStat.mtimeMs,
+    category: 'other',
     absolutePath,
   }
 }
 
-describe('renameImages', () => {
+describe('renameFiles', () => {
   it('uses a two-phase rename when generated names overlap source names', async () => {
-    const folder = await mkdtemp(path.join(os.tmpdir(), 'image-renamer-'))
+    const folder = await mkdtemp(path.join(os.tmpdir(), 'fsr-'))
     temporaryFolders.push(folder)
-    const first = await image(folder, '照片1.jpg', 'first')
-    const second = await image(folder, '照片2.jpg', 'second')
+    const first = await file(folder, '照片1.jpg', 'first')
+    const second = await file(folder, '照片2.jpg', 'second')
 
-    const result = await renameImages({
+    const result = await renameFiles({
       folderPath: folder,
-      images: [second, first],
+      files: [second, first],
       prefix: '照片',
       startNumber: 1,
       padding: 0,
@@ -50,13 +51,13 @@ describe('renameImages', () => {
   })
 
   it('supports padded numbers while preserving each extension', async () => {
-    const folder = await mkdtemp(path.join(os.tmpdir(), 'image-renamer-'))
+    const folder = await mkdtemp(path.join(os.tmpdir(), 'fsr-'))
     temporaryFolders.push(folder)
-    const source = await image(folder, 'source.PNG', 'image')
+    const source = await file(folder, 'source.PNG', 'file')
 
-    await renameImages({ folderPath: folder, images: [source], prefix: '旅行-', startNumber: 7, padding: 3 })
+    await renameFiles({ folderPath: folder, files: [source], prefix: '旅行-', startNumber: 7, padding: 3 })
 
-    expect(await readFile(path.join(folder, '旅行-007.PNG'), 'utf8')).toBe('image')
+    expect(await readFile(path.join(folder, '旅行-007.PNG'), 'utf8')).toBe('file')
   })
 
   it('rejects path characters in prefixes', () => {

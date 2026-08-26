@@ -8,16 +8,20 @@ export type SortRule =
   | 'name-asc'
   | 'name-desc'
 
-export interface ImageItem {
+export type FileCategory = 'all' | 'image' | 'video' | 'audio' | 'document' | 'archive' | 'other'
+export type ConcreteFileCategory = Exclude<FileCategory, 'all'>
+
+export interface FileItem {
   id: string
   name: string
   extension: string
   size: number
   createdAt: number
   modifiedAt: number
+  category: ConcreteFileCategory
 }
 
-export interface StoredImage extends ImageItem {
+export interface StoredFile extends FileItem {
   absolutePath: string
 }
 
@@ -25,5 +29,5 @@ export interface ScanSession {
   id: string
   folderPath: string
   createdAt: number
-  images: StoredImage[]
+  files: StoredFile[]
 }

@@ -1,4 +1,13 @@
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.avif'])
+export type FileCategory = 'all' | 'image' | 'video' | 'audio' | 'document' | 'archive' | 'other'
+export type ConcreteFileCategory = Exclude<FileCategory, 'all'>
+
+const CATEGORY_EXTENSIONS: Record<Exclude<ConcreteFileCategory, 'other'>, ReadonlySet<string>> = {
+  image: new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.avif', '.heic', '.svg']),
+  video: new Set(['.mp4', '.mkv', '.mov', '.avi', '.webm', '.wmv', '.m4v', '.flv', '.mpeg', '.mpg', '.3gp', '.ts']),
+  audio: new Set(['.mp3', '.wav', '.flac', '.aac', '.ogg', '.m4a', '.wma', '.opus', '.aiff']),
+  document: new Set(['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md', '.rtf', '.csv', '.json', '.xml', '.epub']),
+  archive: new Set(['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.cab', '.iso']),
+}
 const INVALID_PREFIX = /[\\/:*?"<>|]/
 
 export interface BrowserFileHandle {
@@ -16,14 +25,15 @@ export interface BrowserDirectoryHandle {
   removeEntry(name: string): Promise<void>
 }
 
-export interface BrowserImage {
+export interface BrowserFileItem {
   id: string
   name: string
   extension: string
   size: number
   createdAt: number
   modifiedAt: number
-  previewUrl: string
+  category: ConcreteFileCategory
+  previewUrl?: string
   handle: BrowserFileHandle
 }
 
@@ -38,38 +48,51 @@ export function supportsDirectoryPicker(): boolean {
 export async function chooseBrowserDirectory(): Promise<BrowserDirectoryHandle> {
   const picker = (window as DirectoryPickerWindow).showDirectoryPicker
   if (!picker) throw new Error('当前浏览器不支持本地文件夹授权，请使用最新版 Chrome 或 Edge。')
-  return picker({ id: 'isr-image-folder', mode: 'readwrite', startIn: 'pictures' })
+  return picker({ id: 'fsr-file-folder', mode: 'readwrite', startIn: 'downloads' })
 }
 
 function extensionOf(name: string): string {
   const index = name.lastIndexOf('.')
-  return index < 0 ? '' : name.slice(index)
+  return index <= 0 ? '' : name.slice(index)
 }
 
-export async function scanBrowserDirectory(directory: BrowserDirectoryHandle): Promise<BrowserImage[]> {
-  const images: BrowserImage[] = []
+export function fileCategoryOf(extension: string): ConcreteFileCategory {
+  const normalized = extension.toLocaleLowerCase()
+  for (const [category, extensions] of Object.entries(CATEGORY_EXTENSIONS)) {
+    if (extensions.has(normalized)) return category as ConcreteFileCategory
+  }
+  return 'other'
+}
+
+export async function scanBrowserDirectory(
+  directory: BrowserDirectoryHandle,
+  category: FileCategory = 'all',
+): Promise<BrowserFileItem[]> {
+  const files: BrowserFileItem[] = []
   for await (const handle of directory.values()) {
     if (handle.kind !== 'file') continue
     const extension = extensionOf(handle.name)
-    if (!IMAGE_EXTENSIONS.has(extension.toLocaleLowerCase())) continue
+    const fileCategory = fileCategoryOf(extension)
+    if (category !== 'all' && fileCategory !== category) continue
     const file = await handle.getFile()
-    images.push({
+    files.push({
       id: crypto.randomUUID(),
       name: handle.name,
       extension,
       size: file.size,
       createdAt: file.lastModified,
       modifiedAt: file.lastModified,
-      previewUrl: URL.createObjectURL(file),
+      category: fileCategory,
+      previewUrl: fileCategory === 'image' || fileCategory === 'video' ? URL.createObjectURL(file) : undefined,
       handle,
     })
   }
-  return images
+  return files
 }
 
-export function releaseBrowserPreviews(images: Array<{ previewUrl?: string }>): void {
-  for (const image of images) {
-    if (image.previewUrl) URL.revokeObjectURL(image.previewUrl)
+export function releaseBrowserPreviews(files: Array<{ previewUrl?: string }>): void {
+  for (const file of files) {
+    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl)
   }
 }
 
@@ -99,9 +122,9 @@ async function namesIn(directory: BrowserDirectoryHandle): Promise<Set<string>> 
   return names
 }
 
-export async function renameBrowserImages(options: {
+export async function renameBrowserFiles(options: {
   directory: BrowserDirectoryHandle
-  images: BrowserImage[]
+  files: BrowserFileItem[]
   prefix: string
   startNumber: number
   padding: number
@@ -109,17 +132,17 @@ export async function renameBrowserImages(options: {
   const prefix = validatePrefix(options.prefix)
   if (!Number.isInteger(options.startNumber) || options.startNumber < 0) throw new Error('起始编号必须是大于或等于 0 的整数。')
   if (!Number.isInteger(options.padding) || options.padding < 0 || options.padding > 12) throw new Error('补零位数必须是 0 到 12 之间的整数。')
-  if (options.images.length === 0) throw new Error('没有可重命名的图片。')
-  if (options.images.some((image) => !image.handle)) throw new Error('网页文件权限已失效，请重新选择文件夹。')
+  if (options.files.length === 0) throw new Error('没有可重命名的文件。')
+  if (options.files.some((file) => !file.handle)) throw new Error('网页文件权限已失效，请重新选择文件夹。')
 
-  const sourceNames = new Set(options.images.map((image) => image.name.toLocaleLowerCase()))
+  const sourceNames = new Set(options.files.map((file) => file.name.toLocaleLowerCase()))
   const existingNames = await namesIn(options.directory)
-  const operations = options.images.map((image, index) => {
+  const operations = options.files.map((file, index) => {
     const number = String(options.startNumber + index).padStart(options.padding, '0')
     return {
-      image,
-      targetName: `${prefix}${number}${image.extension}`,
-      tempName: `.isr-${crypto.randomUUID()}${image.extension}`,
+      file,
+      targetName: `${prefix}${number}${file.extension}`,
+      tempName: `.fsr-${crypto.randomUUID()}${file.extension}`,
     }
   })
   const targetNames = operations.map((operation) => operation.targetName.toLocaleLowerCase())
@@ -132,7 +155,7 @@ export async function renameBrowserImages(options: {
   const createdTemps: string[] = []
   try {
     for (const operation of operations) {
-      await copyFile(options.directory, operation.image.handle, operation.tempName)
+      await copyFile(options.directory, operation.file.handle, operation.tempName)
       createdTemps.push(operation.tempName)
     }
   } catch (error) {
@@ -141,7 +164,7 @@ export async function renameBrowserImages(options: {
   }
 
   try {
-    for (const operation of operations) await options.directory.removeEntry(operation.image.name)
+    for (const operation of operations) await options.directory.removeEntry(operation.file.name)
     for (const operation of operations) {
       const temp = await options.directory.getFileHandle(operation.tempName)
       await copyFile(options.directory, temp, operation.targetName)
@@ -154,13 +177,13 @@ export async function renameBrowserImages(options: {
     for (const operation of operations) {
       try {
         const temp = await options.directory.getFileHandle(operation.tempName)
-        await copyFile(options.directory, temp, operation.image.name)
+        await copyFile(options.directory, temp, operation.file.name)
       } catch {
         restoreFailed = true
       }
     }
     if (restoreFailed) {
-      throw new Error('重命名失败，部分原文件未能自动恢复；为避免数据丢失，文件夹中的 .isr- 临时副本已保留。')
+      throw new Error('重命名失败，部分原文件未能自动恢复；为避免数据丢失，文件夹中的 .fsr- 临时副本已保留。')
     }
     await Promise.all(createdTemps.map((name) => options.directory.removeEntry(name).catch(() => undefined)))
     throw error

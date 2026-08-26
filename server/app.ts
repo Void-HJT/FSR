@@ -3,22 +3,23 @@ import { stat, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import express from 'express'
 import mime from 'mime-types'
-import { renameImages } from './rename-engine.js'
-import type { ImageItem, ScanSession, SortRule, StoredImage } from './types.js'
+import { fileCategoryOf } from './file-types.js'
+import { renameFiles } from './rename-engine.js'
+import type { FileCategory, FileItem, ScanSession, SortRule, StoredFile } from './types.js'
 
-const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tif', '.tiff', '.avif'])
 const SESSION_TTL = 60 * 60 * 1000
+const FILE_CATEGORIES: FileCategory[] = ['all', 'image', 'video', 'audio', 'document', 'archive', 'other']
 const sessions = new Map<string, ScanSession>()
 
-function publicImage(image: StoredImage): ImageItem {
-  const { absolutePath: _absolutePath, ...result } = image
+function publicFile(file: StoredFile): FileItem {
+  const { absolutePath: _absolutePath, ...result } = file
   return result
 }
 
-function sortImages(images: StoredImage[], rule: SortRule): StoredImage[] {
+function sortFiles(files: StoredFile[], rule: SortRule): StoredFile[] {
   const [field, direction] = rule.split('-') as [string, 'asc' | 'desc']
   const multiplier = direction === 'asc' ? 1 : -1
-  return [...images].sort((a, b) => {
+  return [...files].sort((a, b) => {
     let value = 0
     if (field === 'created') value = a.createdAt - b.createdAt
     if (field === 'modified') value = a.modifiedAt - b.modifiedAt
@@ -52,50 +53,55 @@ export function createApp(options: { webDist?: string } = {}) {
       cleanupSessions()
       const folderPath = path.resolve(String(request.body.folderPath ?? ''))
       const rule = String(request.body.sortRule ?? 'created-asc') as SortRule
-      if (!request.body.folderPath) throw new Error('请选择或输入图片文件夹。')
+      const category = String(request.body.category ?? 'all') as FileCategory
+      if (!request.body.folderPath) throw new Error('请选择或输入文件夹。')
       if (!['created-asc', 'created-desc', 'modified-asc', 'modified-desc', 'size-asc', 'size-desc', 'name-asc', 'name-desc'].includes(rule)) {
         throw new Error('排序规则无效。')
       }
+      if (!FILE_CATEGORIES.includes(category)) throw new Error('文件类型无效。')
       const folderStat = await stat(folderPath)
       if (!folderStat.isDirectory()) throw new Error('输入的路径不是文件夹。')
 
       const entries = await readdir(folderPath, { withFileTypes: true })
-      const images: StoredImage[] = []
+      const files: StoredFile[] = []
       for (const entry of entries) {
-        const extension = path.extname(entry.name).toLocaleLowerCase()
-        if (!entry.isFile() || !IMAGE_EXTENSIONS.has(extension)) continue
+        if (!entry.isFile()) continue
+        const extension = path.extname(entry.name)
+        const fileCategory = fileCategoryOf(extension)
+        if (category !== 'all' && fileCategory !== category) continue
         const absolutePath = path.join(folderPath, entry.name)
         const fileStat = await stat(absolutePath)
-        images.push({
+        files.push({
           id: crypto.randomUUID(),
           name: entry.name,
-          extension: path.extname(entry.name),
+          extension,
           size: fileStat.size,
           createdAt: fileStat.birthtimeMs,
           modifiedAt: fileStat.mtimeMs,
+          category: fileCategory,
           absolutePath,
         })
       }
 
-      const ordered = sortImages(images, rule)
-      const session: ScanSession = { id: crypto.randomUUID(), folderPath, createdAt: Date.now(), images: ordered }
+      const ordered = sortFiles(files, rule)
+      const session: ScanSession = { id: crypto.randomUUID(), folderPath, createdAt: Date.now(), files: ordered }
       sessions.set(session.id, session)
-      response.json({ sessionId: session.id, folderPath, images: ordered.map(publicImage) })
+      response.json({ sessionId: session.id, folderPath, files: ordered.map(publicFile) })
     } catch (error) {
       response.status(400).json({ error: error instanceof Error ? error.message : '扫描文件夹失败。' })
     }
   })
 
-  app.get('/api/scans/:sessionId/images/:imageId', (request, response) => {
+  app.get('/api/scans/:sessionId/files/:fileId', (request, response) => {
     try {
       const session = getSession(request.params.sessionId)
-      const image = session.images.find((item) => item.id === request.params.imageId)
-      if (!image) throw new Error('图片不存在或扫描结果已失效。')
-      response.type(mime.lookup(image.absolutePath) || 'application/octet-stream')
+      const file = session.files.find((item) => item.id === request.params.fileId)
+      if (!file) throw new Error('文件不存在或扫描结果已失效。')
+      response.type(mime.lookup(file.absolutePath) || 'application/octet-stream')
       response.setHeader('Cache-Control', 'private, max-age=300')
-      response.sendFile(image.absolutePath)
+      response.sendFile(file.absolutePath)
     } catch (error) {
-      response.status(404).json({ error: error instanceof Error ? error.message : '图片不存在。' })
+      response.status(404).json({ error: error instanceof Error ? error.message : '文件不存在。' })
     }
   })
 
@@ -103,22 +109,22 @@ export function createApp(options: { webDist?: string } = {}) {
     try {
       const session = getSession(String(request.body.sessionId ?? ''))
       const orderedIds: string[] = Array.isArray(request.body.orderedIds) ? request.body.orderedIds.map(String) : []
-      if (orderedIds.length !== session.images.length || new Set(orderedIds).size !== session.images.length) {
-        throw new Error('请为文件夹中的每一张图片指定顺序。')
+      if (orderedIds.length !== session.files.length || new Set(orderedIds).size !== session.files.length) {
+        throw new Error('请为当前筛选结果中的每个文件指定顺序。')
       }
-      const imageMap = new Map(session.images.map((image) => [image.id, image]))
-      const orderedImages = orderedIds.map((id) => imageMap.get(id))
-      if (orderedImages.some((image) => !image)) throw new Error('图片顺序中包含无效项目，请重新扫描。')
-      for (const image of orderedImages as StoredImage[]) {
-        const latest = await stat(image.absolutePath)
-        if (latest.size !== image.size || Math.abs(latest.mtimeMs - image.modifiedAt) > 2) {
-          throw new Error(`图片在扫描后发生变化，请重新扫描：${image.name}`)
+      const fileMap = new Map(session.files.map((file) => [file.id, file]))
+      const orderedFiles = orderedIds.map((id) => fileMap.get(id))
+      if (orderedFiles.some((file) => !file)) throw new Error('文件顺序中包含无效项目，请重新扫描。')
+      for (const file of orderedFiles as StoredFile[]) {
+        const latest = await stat(file.absolutePath)
+        if (latest.size !== file.size || Math.abs(latest.mtimeMs - file.modifiedAt) > 2) {
+          throw new Error(`文件在扫描后发生变化，请重新扫描：${file.name}`)
         }
       }
 
-      const results = await renameImages({
+      const results = await renameFiles({
         folderPath: session.folderPath,
-        images: orderedImages as StoredImage[],
+        files: orderedFiles as StoredFile[],
         prefix: String(request.body.prefix ?? ''),
         startNumber: Number(request.body.startNumber ?? 1),
         padding: Number(request.body.padding ?? 0),

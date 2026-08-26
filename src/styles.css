@@ -32,7 +32,7 @@ button.primary, button.secondary { flex: 0 0 auto; height: 43px; padding: 0 17px
 button.primary { color: #fff; background: #1f3329; }
 button.primary:hover { background: #294537; }
 button.secondary { border: 1px solid #cfd3cc; background: #f8f8f4; color: #34443b; }
-.settings-grid { display: grid; grid-template-columns: 1.1fr 1.2fr .45fr .65fr; gap: 15px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #ebe8df; }
+.settings-grid { display: grid; grid-template-columns: .85fr 1.05fr 1.15fr .45fr .65fr; gap: 15px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #ebe8df; }
 .notice { margin: 15px 0; padding: 12px 15px; border-radius: 10px; font-size: 14px; }
 .notice.error { border: 1px solid #efc2b5; color: #9c321c; background: #fff0eb; }
 .notice.success { border: 1px solid #b8ddc4; color: #21683e; background: #edf9f0; }
@@ -44,14 +44,22 @@ button.secondary { border: 1px solid #cfd3cc; background: #f8f8f4; color: #34443
 .section-heading p { margin: 0; color: #7b817d; font-size: 13px; }
 .section-heading > strong { padding: 6px 9px; border-radius: 8px; background: #edf1ec; color: #456052; font-size: 13px; }
 .gallery { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 11px; max-height: 635px; padding: 0 18px 20px; overflow: auto; }
-.image-card { position: relative; min-width: 0; padding: 7px; border: 1px solid transparent; border-radius: 12px; color: inherit; text-align: left; background: transparent; user-select: none; -webkit-user-select: none; transition: transform .16s, border-color .16s, background .16s; }
-.image-card:hover { transform: translateY(-2px); background: #f5f6f0; }
-.image-card.selected { border-color: #ccd7cf; background: #f5f7f3; }
-.image-card.batch-selected { border-color: #33745a; background: #e7f4ec; box-shadow: 0 0 0 3px rgba(51,116,90,.14); cursor: grab; touch-action: none; }
-.image-card.batch-selected:active { cursor: grabbing; }
+.file-card { position: relative; min-width: 0; padding: 7px; border: 1px solid transparent; border-radius: 12px; color: inherit; text-align: left; background: transparent; user-select: none; -webkit-user-select: none; transition: transform .16s, border-color .16s, background .16s; }
+.file-card:hover { transform: translateY(-2px); background: #f5f6f0; }
+.file-card.selected { border-color: #ccd7cf; background: #f5f7f3; }
+.file-card.batch-selected { border-color: #33745a; background: #e7f4ec; box-shadow: 0 0 0 3px rgba(51,116,90,.14); cursor: grab; touch-action: none; }
+.file-card.batch-selected:active { cursor: grabbing; }
 .drop-marker { position: absolute; z-index: 8; width: 4px; min-height: 24px; border-radius: 999px; background: #d45c34; box-shadow: 0 0 0 3px rgba(212,92,52,.18); transform: translateX(-50%); pointer-events: none; }
 .thumb-wrap { position: relative; width: 100%; aspect-ratio: 1.18; overflow: hidden; border-radius: 8px; background: #e7e6df; }
-.thumb-wrap img { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
+.thumb-wrap img, .thumb-wrap video { width: 100%; height: 100%; display: block; object-fit: cover; pointer-events: none; }
+.file-placeholder { width: 100%; height: 100%; display: grid; place-content: center; gap: 7px; color: #44524b; text-align: center; background: linear-gradient(145deg, #eef0eb, #dfe4df); pointer-events: none; }
+.file-placeholder strong { font-size: 22px; letter-spacing: .08em; }
+.file-placeholder span { font-size: 11px; font-weight: 800; }
+.file-placeholder.audio { color: #625038; background: linear-gradient(145deg, #fbf1da, #ead9b7); }
+.file-placeholder.document { color: #3d536a; background: linear-gradient(145deg, #e9f1f8, #d3e0ec); }
+.file-placeholder.archive { color: #65513f; background: linear-gradient(145deg, #f4e8db, #e4d1bb); }
+.file-placeholder.other { color: #57565c; background: linear-gradient(145deg, #eeeeef, #d9d9dd); }
+.file-type-badge { position: absolute; top: 7px; right: 7px; padding: 4px 7px; border-radius: 999px; color: #fff; background: rgba(31,51,41,.82); font-size: 10px; font-weight: 800; }
 .order-badge { position: absolute; top: 7px; left: 7px; min-width: 26px; height: 26px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; color: #fff; background: #d45c34; box-shadow: 0 2px 8px rgba(83,34,17,.3); font-size: 12px; font-weight: 850; }
 .swap-label { position: absolute; right: 7px; bottom: 7px; padding: 5px 8px; border-radius: 7px; color: #fff; background: rgba(31,51,41,.9); font-size: 11px; font-weight: 800; }
 .drag-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 9999; display: flex; align-items: center; gap: 7px; padding: 10px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; color: #fff; background: rgba(31,51,41,.94); box-shadow: 0 10px 28px rgba(0,0,0,.28); font-family: "Segoe UI", "Microsoft YaHei", sans-serif; pointer-events: none; }

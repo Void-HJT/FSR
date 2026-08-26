@@ -11,7 +11,7 @@ export function startServer(options: { port?: number; serveWeb?: boolean } = {})
   const app = createApp({ webDist })
   return new Promise((resolve, reject) => {
     const server = app.listen(port, '127.0.0.1', () => {
-      console.log(`Image Renamer is running at http://127.0.0.1:${port}`)
+      console.log(`File Sequence Renamer is running at http://127.0.0.1:${port}`)
       resolve(server)
     })
     server.on('error', reject)

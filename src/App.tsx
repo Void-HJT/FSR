@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import {
   chooseBrowserDirectory,
   releaseBrowserPreviews,
-  renameBrowserImages,
+  renameBrowserFiles,
   scanBrowserDirectory,
   supportsDirectoryPicker,
   type BrowserDirectoryHandle,
   type BrowserFileHandle,
+  type ConcreteFileCategory,
+  type FileCategory,
 } from './browser-files'
 import { advanceSelectionPath, findStableDropSlot, insertBatchAtIndex, type DragSlot } from './order-utils'
 
@@ -39,13 +41,14 @@ type BatchPointerGesture = {
   holdTimer: number | null
 }
 
-interface ImageItem {
+interface FileItem {
   id: string
   name: string
   extension: string
   size: number
   createdAt: number
   modifiedAt: number
+  category: ConcreteFileCategory
   previewUrl?: string
   handle?: BrowserFileHandle
 }
@@ -53,7 +56,7 @@ interface ImageItem {
 interface ScanResult {
   sessionId: string
   folderPath: string
-  images: ImageItem[]
+  files: FileItem[]
 }
 
 const sortOptions: Array<{ value: SortRule; label: string }> = [
@@ -65,6 +68,34 @@ const sortOptions: Array<{ value: SortRule; label: string }> = [
   { value: 'size-desc', label: '文件大小：从大到小' },
   { value: 'custom', label: '自定义顺序' },
 ]
+
+const categoryOptions: Array<{ value: FileCategory; label: string }> = [
+  { value: 'all', label: '全部文件' },
+  { value: 'image', label: '仅图片' },
+  { value: 'video', label: '仅视频' },
+  { value: 'audio', label: '仅音频' },
+  { value: 'document', label: '仅文档' },
+  { value: 'archive', label: '仅压缩包' },
+  { value: 'other', label: '其他文件' },
+]
+
+const categoryLabels: Record<ConcreteFileCategory, string> = {
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+  document: '文档',
+  archive: '压缩包',
+  other: '其他',
+}
+
+const categoryIcons: Record<ConcreteFileCategory, string> = {
+  image: 'IMG',
+  video: 'VID',
+  audio: 'AUD',
+  document: 'DOC',
+  archive: 'ZIP',
+  other: 'FILE',
+}
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -82,10 +113,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 ** 2).toFixed(1)} MB`
 }
 
-function sortItems(images: ImageItem[], rule: AutomaticSortRule): ImageItem[] {
+function sortItems(files: FileItem[], rule: AutomaticSortRule): FileItem[] {
   const [field, direction] = rule.split('-') as [string, 'asc' | 'desc']
   const multiplier = direction === 'asc' ? 1 : -1
-  return [...images].sort((a, b) => {
+  return [...files].sort((a, b) => {
     let value = 0
     if (field === 'created') value = a.createdAt - b.createdAt
     if (field === 'modified') value = a.modifiedAt - b.modifiedAt
@@ -99,7 +130,7 @@ export default function App() {
   const [folderPath, setFolderPath] = useState('')
   const [browserDirectory, setBrowserDirectory] = useState<BrowserDirectoryHandle | null>(null)
   const [sessionId, setSessionId] = useState('')
-  const [images, setImages] = useState<ImageItem[]>([])
+  const [files, setFiles] = useState<FileItem[]>([])
   const [orderedIds, setOrderedIds] = useState<string[]>([])
   const [customBaseIds, setCustomBaseIds] = useState<string[]>([])
   const [customPhase, setCustomPhase] = useState<CustomPhase>('building')
@@ -108,13 +139,14 @@ export default function App() {
   const [dragPreviewIds, setDragPreviewIds] = useState<string[] | null>(null)
   const defaultSortRule: AutomaticSortRule = isDesktop ? 'created-asc' : 'modified-asc'
   const [sortRule, setSortRule] = useState<SortRule>(defaultSortRule)
-  const [prefix, setPrefix] = useState('图片')
+  const [fileCategory, setFileCategory] = useState<FileCategory>('all')
+  const [prefix, setPrefix] = useState('文件')
   const [startNumber, setStartNumber] = useState(1)
   const [padding, setPadding] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const previews = useRef<ImageItem[]>([])
+  const previews = useRef<FileItem[]>([])
   const lastAutomaticRule = useRef<AutomaticSortRule>(defaultSortRule)
   const dragTarget = useRef<'custom' | 'batch' | null>(null)
   const selectionPath = useRef<string[]>([])
@@ -165,21 +197,21 @@ export default function App() {
     }
   }, [])
 
-  const imageMap = useMemo(() => new Map(images.map((item) => [item.id, item])), [images])
+  const fileMap = useMemo(() => new Map(files.map((item) => [item.id, item])), [files])
   orderedIdsRef.current = orderedIds
   const isCustomBuilding = sortRule === 'custom' && customPhase === 'building'
   const effectiveOrderedIds = dragPreviewIds ?? orderedIds
-  const orderedImages = effectiveOrderedIds.map((id) => imageMap.get(id)).filter(Boolean) as ImageItem[]
+  const orderedFiles = effectiveOrderedIds.map((id) => fileMap.get(id)).filter(Boolean) as FileItem[]
   const galleryOrderIds = isCustomBuilding ? customBaseIds : effectiveOrderedIds
-  const galleryImages = galleryOrderIds.map((id) => imageMap.get(id)).filter(Boolean) as ImageItem[]
+  const galleryFiles = galleryOrderIds.map((id) => fileMap.get(id)).filter(Boolean) as FileItem[]
   const orderMap = useMemo(() => new Map(effectiveOrderedIds.map((id, index) => [id, index + 1])), [effectiveOrderedIds])
 
-  const replaceImages = (next: ImageItem[]) => {
+  const replaceFiles = (next: FileItem[]) => {
     releaseBrowserPreviews(previews.current)
-    previews.current = next.filter((image) => image.previewUrl)
-    setImages(next)
+    previews.current = next.filter((file) => file.previewUrl)
+    setFiles(next)
     const baseRule = sortRule === 'custom' ? lastAutomaticRule.current : sortRule
-    const sortedIds = sortItems(next, baseRule).map((image) => image.id)
+    const sortedIds = sortItems(next, baseRule).map((file) => file.id)
     setCustomBaseIds(sortedIds)
     const nextOrder = sortRule === 'custom' ? [] : sortedIds
     orderedIdsRef.current = nextOrder
@@ -191,21 +223,47 @@ export default function App() {
     setDragPreviewIds(null)
   }
 
-  const loadBrowserData = async (directory: BrowserDirectoryHandle) => {
-    const loaded = await scanBrowserDirectory(directory)
-    replaceImages(loaded)
-    if (loaded.length === 0) setMessage('文件夹中没有找到支持的图片。')
+  const loadBrowserData = async (directory: BrowserDirectoryHandle, category: FileCategory = fileCategory) => {
+    const loaded = await scanBrowserDirectory(directory, category)
+    replaceFiles(loaded)
+    if (loaded.length === 0) setMessage(`文件夹中没有找到${categoryOptions.find((option) => option.value === category)?.label ?? '匹配的文件'}。`)
   }
 
-  const scanDesktopData = async () => {
+  const scanDesktopData = async (category: FileCategory = fileCategory) => {
     const result = await api<ScanResult>('/api/scan', {
       method: 'POST',
-      body: JSON.stringify({ folderPath, sortRule: sortRule === 'custom' ? lastAutomaticRule.current : sortRule }),
+      body: JSON.stringify({
+        folderPath,
+        category,
+        sortRule: sortRule === 'custom' ? lastAutomaticRule.current : sortRule,
+      }),
     })
     setFolderPath(result.folderPath)
     setSessionId(result.sessionId)
-    replaceImages(result.images)
-    if (result.images.length === 0) setMessage('文件夹中没有找到支持的图片。')
+    replaceFiles(result.files)
+    if (result.files.length === 0) setMessage(`文件夹中没有找到${categoryOptions.find((option) => option.value === category)?.label ?? '匹配的文件'}。`)
+  }
+
+  const applyFileCategory = async (category: FileCategory) => {
+    setFileCategory(category)
+    setSessionId('')
+    setError('')
+    setMessage('')
+    if ((!isDesktop && !browserDirectory) || (isDesktop && !folderPath.trim())) {
+      replaceFiles([])
+      return
+    }
+
+    setBusy(true)
+    try {
+      if (isDesktop) await scanDesktopData(category)
+      else await loadBrowserData(browserDirectory!, category)
+    } catch (caught) {
+      replaceFiles([])
+      setError(caught instanceof Error ? caught.message : '切换文件类型失败。')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const chooseFolder = async () => {
@@ -238,7 +296,7 @@ export default function App() {
     try {
       if (isDesktop) await scanDesktopData()
       else if (browserDirectory) await loadBrowserData(browserDirectory)
-      else throw new Error('请先选择图片文件夹。')
+      else throw new Error('请先选择文件夹。')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '扫描失败。')
     } finally {
@@ -253,25 +311,25 @@ export default function App() {
     setDropPosition(null)
     setDragPreviewIds(null)
     if (nextRule === 'custom') {
-      const baseIds = orderedIds.length === images.length
+      const baseIds = orderedIds.length === files.length
         ? orderedIds
-        : sortItems(images, lastAutomaticRule.current).map((image) => image.id)
+        : sortItems(files, lastAutomaticRule.current).map((file) => file.id)
       setCustomBaseIds(baseIds)
       orderedIdsRef.current = []
       setOrderedIds([])
       setCustomPhase('building')
       customCompletionPending.current = false
-      setMessage('自定义顺序已开启：请按希望的命名顺序点击或划过全部图片。')
+      setMessage('自定义顺序已开启：请按希望的命名顺序点击或划过全部文件。')
       return
     }
     lastAutomaticRule.current = nextRule
-    const sortedIds = sortItems(images, nextRule).map((image) => image.id)
+    const sortedIds = sortItems(files, nextRule).map((file) => file.id)
     setCustomBaseIds(sortedIds)
     orderedIdsRef.current = sortedIds
     setOrderedIds(sortedIds)
     setCustomPhase('building')
     customCompletionPending.current = false
-    setMessage('已按规则重新排列，可划选多张图片并成组拖动调整顺序。')
+    setMessage('已按规则重新排列，可划选多个文件并成组拖动调整顺序。')
   }
 
   const toggleSelectionPath = (id: string) => {
@@ -282,7 +340,7 @@ export default function App() {
         ? current.filter((item) => item !== id)
         : [...current, id]
       orderedIdsRef.current = next
-      customCompletionPending.current = next.length === images.length
+      customCompletionPending.current = next.length === files.length
       setOrderedIds(next)
       return
     }
@@ -297,13 +355,13 @@ export default function App() {
     dragTarget.current = null
     selectionPath.current = []
     if (batchGesture.current) finishBatchGestureRef.current()
-    if (isCustomBuilding && customCompletionPending.current && orderedIdsRef.current.length === images.length) {
+    if (isCustomBuilding && customCompletionPending.current && orderedIdsRef.current.length === files.length) {
       finishCustomSelectionRef.current()
       event.preventDefault()
       dragTarget.current = 'batch'
       selectionPath.current = [id]
       toggleSelectionPath(id)
-      setMessage('已进入批量调整，正在按滑动路径选择图片。')
+      setMessage('已进入批量调整，正在按滑动路径选择文件。')
       return
     }
     if (!isCustomBuilding && batchSelectedIds.includes(id)) {
@@ -315,8 +373,8 @@ export default function App() {
     selectionPath.current = [id]
     toggleSelectionPath(id)
     setMessage(isCustomBuilding
-      ? '正在按路径记录自定义顺序；本次按压中再次经过同一图片会取消。'
-      : '正在按滑动路径切换选择；本次按压中再次经过同一图片会取消选择。')
+      ? '正在按路径记录自定义顺序；本次按压中再次经过同一文件会取消。'
+      : '正在按滑动路径切换选择；本次按压中再次经过同一文件会取消选择。')
   }
 
   const continueSelectionDrag = (event: ReactPointerEvent<HTMLButtonElement>, id: string) => {
@@ -340,17 +398,17 @@ export default function App() {
       const remaining = current.filter((id) => !selected.has(id))
       return direction === 'top' ? [...selectedItems, ...remaining] : [...remaining, ...selectedItems]
     })
-    setMessage(`已将 ${batchSelectedIds.length} 张图片成组${direction === 'top' ? '移到最前' : '移到最后'}。`)
+    setMessage(`已将 ${batchSelectedIds.length} 个文件成组${direction === 'top' ? '移到最前' : '移到最后'}。`)
   }
 
   function captureDragSlots() {
     const gallery = galleryRef.current
     if (!gallery) return
     const galleryBounds = gallery.getBoundingClientRect()
-    dragSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-image-id]')).map((card) => {
+    dragSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card) => {
       const bounds = card.getBoundingClientRect()
       return {
-        targetId: card.dataset.imageId!,
+        targetId: card.dataset.fileId!,
         left: bounds.left - galleryBounds.left + gallery.scrollLeft,
         right: bounds.right - galleryBounds.left + gallery.scrollLeft,
         top: bounds.top - galleryBounds.top + gallery.scrollTop,
@@ -435,13 +493,13 @@ export default function App() {
     const count = document.createElement('strong')
     count.textContent = `${draggedBatchIds.current.length}`
     const label = document.createElement('em')
-    label.textContent = '张图片'
+    label.textContent = '个文件'
     ghost.append(icon, count, label)
     document.body.append(ghost)
     dragGhost.current = ghost
     positionDragGhost(clientX, clientY)
     updateBatchDrop(clientX, clientY)
-    setMessage(`正在拖动 ${draggedBatchIds.current.length} 张图片，请在目标间隙松开。`)
+    setMessage(`正在拖动 ${draggedBatchIds.current.length} 个文件，请在目标间隙松开。`)
   }
 
   function startBatchPointerGesture(event: ReactPointerEvent<HTMLButtonElement>, id: string) {
@@ -492,11 +550,11 @@ export default function App() {
       const position = currentDropPosition.current
       if (moving.length && position) {
         setOrderedIds(insertBatchAtIndex(dragOriginIds.current, moving, position.insertionIndex))
-        setMessage(`已在图片间隙插入 ${moving.length} 张图片。`)
+        setMessage(`已在文件间隙插入 ${moving.length} 个文件。`)
       }
     } else {
       setBatchSelectedIds((current) => current.filter((item) => item !== gesture.sourceId))
-      setMessage('已取消选择这张图片。')
+      setMessage('已取消选择这个文件。')
     }
     clearBatchReorderVisuals()
     batchGesture.current = null
@@ -524,11 +582,11 @@ export default function App() {
 
   function finishCustomSelection() {
     if (sortRule !== 'custom' || customPhase !== 'building' || !customCompletionPending.current) return
-    if (orderedIdsRef.current.length !== images.length) return
+    if (orderedIdsRef.current.length !== files.length) return
     customCompletionPending.current = false
     setBatchSelectedIds([])
     setCustomPhase('adjusting')
-    setMessage('自定义顺序已全部选定，现在可以批量选择并拖动图片进行调整。')
+    setMessage('自定义顺序已全部选定，现在可以批量选择并拖动文件进行调整。')
   }
 
   function restartCustomOrdering() {
@@ -539,7 +597,7 @@ export default function App() {
     setBatchSelectedIds([])
     setCustomPhase('building')
     customCompletionPending.current = false
-    setMessage('已重新开始自定义顺序，请按希望的命名顺序选择全部图片。')
+    setMessage('已重新开始自定义顺序，请按希望的命名顺序选择全部文件。')
   }
 
   finishBatchGestureRef.current = finishBatchGesture
@@ -554,9 +612,9 @@ export default function App() {
     setOrderedIds(next)
   }
 
-  const previewName = (image: ImageItem, index: number) => {
+  const previewName = (file: FileItem, index: number) => {
     const number = String(startNumber + index).padStart(padding, '0')
-    return `${prefix.trim() || '前缀'}${number}${image.extension}`
+    return `${prefix.trim() || '前缀'}${number}${file.extension}`
   }
 
   const renameAll = async () => {
@@ -564,11 +622,11 @@ export default function App() {
       setError('请先完成自定义顺序，并松开鼠标进入批量调整阶段。')
       return
     }
-    if (orderedIds.length !== images.length) {
-      setError('图片顺序不完整，请重新扫描文件夹。')
+    if (orderedIds.length !== files.length) {
+      setError('文件顺序不完整，请重新扫描文件夹。')
       return
     }
-    if (!window.confirm(`即将按当前顺序重命名 ${images.length} 张图片。此操作会修改原文件名，是否继续？`)) return
+    if (!window.confirm(`即将按当前顺序重命名 ${files.length} 个文件。此操作会修改原文件名，是否继续？`)) return
     setBusy(true)
     setError('')
     setMessage('')
@@ -583,16 +641,16 @@ export default function App() {
         await scanDesktopData()
       } else {
         if (!browserDirectory) throw new Error('文件夹授权已失效，请重新选择文件夹。')
-        renamed = await renameBrowserImages({
+        renamed = await renameBrowserFiles({
           directory: browserDirectory,
-          images: orderedImages.map((image) => ({ ...image, previewUrl: image.previewUrl!, handle: image.handle! })),
+          files: orderedFiles.map((file) => ({ ...file, previewUrl: file.previewUrl!, handle: file.handle! })),
           prefix,
           startNumber,
           padding,
         })
         await loadBrowserData(browserDirectory)
       }
-      setMessage(`已成功重命名 ${renamed} 张图片。`)
+      setMessage(`已成功重命名 ${renamed} 个文件。`)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '重命名失败。')
     } finally {
@@ -604,33 +662,39 @@ export default function App() {
     <main className="app-shell">
       <header className="hero">
         <div>
-          <p className="eyebrow">IMAGE SEQUENCE RENAMER</p>
-          <h1>图片顺序重命名器</h1>
-          <p className="subtitle">先按规则排列，再划选并拖动图片调整顺序。所有文件只在本机处理。</p>
+          <p className="eyebrow">FILE SEQUENCE RENAMER</p>
+          <h1>文件序列重命名器</h1>
+          <p className="subtitle">筛选图片、视频或其他文件，按规则排序后批量重命名。所有内容只在本机处理。</p>
         </div>
         <div className="privacy-chip"><span /> {isDesktop ? '桌面本地模式' : '网页本地模式'}</div>
       </header>
 
       <section className="control-panel">
         <div className="field folder-field">
-          <label htmlFor="folder">图片文件夹</label>
+          <label htmlFor="folder">目标文件夹</label>
           {isDesktop ? (
             <div className="input-row">
               <input id="folder" value={folderPath} onChange={(event) => setFolderPath(event.target.value)} placeholder="输入或选择文件夹绝对路径" />
               <button className="secondary" onClick={chooseFolder}>选择文件夹</button>
-              <button className="primary" disabled={busy || !folderPath.trim()} onClick={scanFolder}>{busy ? '处理中…' : '扫描图片'}</button>
+              <button className="primary" disabled={busy || !folderPath.trim()} onClick={scanFolder}>{busy ? '处理中…' : '扫描文件'}</button>
             </div>
           ) : (
             <div className="input-row">
               <div className="folder-display">{folderPath || '尚未选择文件夹'}</div>
-              <button className="primary" disabled={busy || !supportsDirectoryPicker()} onClick={chooseFolder}>{busy ? '处理中…' : '选择图片文件夹'}</button>
+              <button className="primary" disabled={busy || !supportsDirectoryPicker()} onClick={chooseFolder}>{busy ? '处理中…' : '选择文件夹'}</button>
               {browserDirectory && <button className="secondary" disabled={busy} onClick={scanFolder}>重新扫描</button>}
             </div>
           )}
-          {!isDesktop && <small>{supportsDirectoryPicker() ? '浏览器会请求文件夹读写权限，图片不会上传。' : '当前浏览器不支持文件夹读写，请使用最新版 Chrome 或 Edge。'}</small>}
+          {!isDesktop && <small>{supportsDirectoryPicker() ? '浏览器会请求文件夹读写权限，文件不会上传。' : '当前浏览器不支持文件夹读写，请使用最新版 Chrome 或 Edge。'}</small>}
         </div>
 
         <div className="settings-grid">
+          <div className="field">
+            <label htmlFor="category">文件类型</label>
+            <select id="category" value={fileCategory} disabled={busy} onChange={(event) => void applyFileCategory(event.target.value as FileCategory)}>
+              {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </div>
           <div className="field">
             <label htmlFor="prefix">文件名前缀</label>
             <input id="prefix" value={prefix} maxLength={120} onChange={(event) => setPrefix(event.target.value)} />
@@ -662,22 +726,22 @@ export default function App() {
       {error && <div className="notice error">{error}</div>}
       {message && <div className="notice success">{message}</div>}
 
-      {images.length > 0 && (
+      {files.length > 0 && (
         <div className="workspace">
           <section className="gallery-panel">
             <div className="section-heading">
               <div>
-                <h2>图片预览与排序</h2>
+                <h2>文件预览与排序</h2>
                 <p>{isCustomBuilding
-                  ? '自定义选序：按希望的命名顺序点击或划过图片；再次经过会取消。'
+                  ? '自定义选序：按希望的命名顺序点击或划过文件；再次经过会取消。'
                   : sortRule === 'custom'
                     ? '顺序已全部选定；现在可批量划选，短按取消，移动或长按拖动整组。'
-                  : '当前为规则排序结果；可直接划选多张图片并成组拖动调整。'}</p>
+                  : '当前为规则排序结果；可直接划选多个文件并成组拖动调整。'}</p>
               </div>
               <div className="heading-actions">
                 {isCustomBuilding ? (
                   <>
-                    <strong>已排 {orderedIds.length} / {images.length}</strong>
+                    <strong>已排 {orderedIds.length} / {files.length}</strong>
                     <button
                       className="text-button"
                       disabled={!orderedIds.length}
@@ -708,27 +772,36 @@ export default function App() {
                   style={{ left: dropPosition.markerLeft, top: dropPosition.markerTop, height: dropPosition.markerHeight }}
                 />
               )}
-              {galleryImages.map((image) => {
-                const order = orderMap.get(image.id)
+              {galleryFiles.map((file) => {
+                const order = orderMap.get(file.id)
+                const mediaUrl = file.previewUrl || (isDesktop ? `/api/scans/${sessionId}/files/${file.id}` : '')
                 return (
                   <button
-                    className={`image-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(image.id) ? 'batch-selected' : ''}`}
-                    key={image.id}
-                    data-image-id={image.id}
-                    onPointerDown={(event) => startSelectionDrag(event, image.id)}
-                    onPointerEnter={(event) => continueSelectionDrag(event, image.id)}
+                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''}`}
+                    key={file.id}
+                    data-file-id={file.id}
+                    onPointerDown={(event) => startSelectionDrag(event, file.id)}
+                    onPointerEnter={(event) => continueSelectionDrag(event, file.id)}
                     onPointerMove={continueBatchPointerGesture}
                     onPointerUp={finishBatchPointerGesture}
                     onPointerCancel={cancelBatchPointerGesture}
                     type="button"
                   >
                     <div className="thumb-wrap">
-                      <img draggable="false" loading="lazy" src={image.previewUrl || `/api/scans/${sessionId}/images/${image.id}`} alt={image.name} />
+                      {file.category === 'image' && <img draggable="false" loading="lazy" src={mediaUrl} alt={file.name} />}
+                      {file.category === 'video' && <video draggable="false" muted preload="metadata" src={mediaUrl} aria-label={file.name} />}
+                      {file.category !== 'image' && file.category !== 'video' && (
+                        <div className={`file-placeholder ${file.category}`}>
+                          <strong>{categoryIcons[file.category]}</strong>
+                          <span>{categoryLabels[file.category]}</span>
+                        </div>
+                      )}
+                      <span className="file-type-badge">{categoryLabels[file.category]}</span>
                       {order && <span className="order-badge">{order}</span>}
-                      {batchSelectedIds.includes(image.id) && <span className="swap-label">短按取消 · 拖动排序</span>}
+                      {batchSelectedIds.includes(file.id) && <span className="swap-label">短按取消 · 拖动排序</span>}
                     </div>
-                    <span className="original-name" title={image.name}>{image.name}</span>
-                    <span className="metadata">{formatBytes(image.size)} · {new Date(image.modifiedAt).toLocaleDateString()}</span>
+                    <span className="original-name" title={file.name}>{file.name}</span>
+                    <span className="metadata">{formatBytes(file.size)} · {new Date(file.modifiedAt).toLocaleDateString()}</span>
                   </button>
                 )
               })}
@@ -740,36 +813,36 @@ export default function App() {
               <div><h2>命名队列</h2><p>最终结果预览</p></div>
             </div>
             <ol className="rename-list">
-              {orderedImages.length === 0 && <li className="queue-empty">尚未选择图片</li>}
-              {orderedImages.map((image, index) => (
-                <li key={image.id}>
+              {orderedFiles.length === 0 && <li className="queue-empty">尚未选择文件</li>}
+              {orderedFiles.map((file, index) => (
+                <li key={file.id}>
                   <span className="list-index">{index + 1}</span>
                   <div>
-                    <span className="from-name">{image.name}</span>
-                    <strong title={previewName(image, index)}>{previewName(image, index)}</strong>
+                    <span className="from-name">{file.name}</span>
+                    <strong title={previewName(file, index)}>{previewName(file, index)}</strong>
                   </div>
                   <span className="move-buttons">
                     <button disabled={index === 0} onClick={() => moveItem(index, -1)} aria-label="上移">↑</button>
-                    <button disabled={index === orderedImages.length - 1} onClick={() => moveItem(index, 1)} aria-label="下移">↓</button>
+                    <button disabled={index === orderedFiles.length - 1} onClick={() => moveItem(index, 1)} aria-label="下移">↓</button>
                   </span>
                 </li>
               ))}
             </ol>
             <div className="rename-footer">
-              <p>{isDesktop ? '桌面版执行原生重命名，并检查重名和文件变化。' : '网页版经授权后直接处理本地文件，不会上传图片。'}</p>
-              <button className="rename-button" disabled={busy || images.length === 0 || orderedIds.length !== images.length || isCustomBuilding || !prefix.trim()} onClick={renameAll}>
-                {busy ? '处理中…' : `重命名 ${images.length} 张图片`}
+              <p>{isDesktop ? '桌面版执行原生重命名，并检查重名和文件变化。' : '网页版经授权后直接处理本地文件，不会上传文件。'}</p>
+              <button className="rename-button" disabled={busy || files.length === 0 || orderedIds.length !== files.length || isCustomBuilding || !prefix.trim()} onClick={renameAll}>
+                {busy ? '处理中…' : `重命名 ${files.length} 个文件`}
               </button>
             </div>
           </aside>
         </div>
       )}
 
-      {!images.length && !busy && (
+      {!files.length && !busy && (
         <section className="empty-state">
           <div className="empty-icon">▧</div>
-          <h2>从一个图片文件夹开始</h2>
-          <p>支持 JPG、PNG、GIF、WebP、BMP、TIFF 与 AVIF；只处理文件夹第一层中的图片。</p>
+          <h2>从一个文件夹开始</h2>
+          <p>可选择全部、图片、视频、音频、文档、压缩包或其他文件；只处理文件夹第一层。</p>
         </section>
       )}
     </main>
