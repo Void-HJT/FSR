@@ -15,7 +15,8 @@
     "build:web": "tsc -b && vite build",
     "start": "node dist-server/index.js",
     "desktop": "npm run build && electron .",
-    "package:win": "npm run build && electron-builder --win nsis",
+    "prepare:nsis": "node scripts/prepare-nsis.mjs",
+    "package:win": "npm run prepare:nsis && npm run build && electron-builder --win nsis",
     "test": "vitest run",
     "test:watch": "vitest"
   },
