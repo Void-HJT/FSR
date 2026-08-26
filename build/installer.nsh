@@ -28,24 +28,27 @@ Function normalizeRootInstallDir
 FunctionEnd
 
 Function normalizeDirectoryPage
-  GetFunctionAddress $R0 normalizeInstallDirTimer
-  nsDialogs::CreateTimer $R0 100
-  Call normalizeInstallDirTimer
+  ${NSD_OnChange} $mui.DirectoryPage.Directory normalizeInstallDirChange
+  Call normalizeInstallDirChange
 FunctionEnd
 
-Function stopNormalizeDirectoryPage
-  GetFunctionAddress $R0 normalizeInstallDirTimer
-  nsDialogs::KillTimer $R0
-FunctionEnd
-
-Function normalizeInstallDirTimer
+Function normalizeInstallDirChange
   ${NSD_GetText} $mui.DirectoryPage.Directory $R9
   StrCpy $INSTDIR $R9
   Call normalizeRootInstallDir
-  StrCmp $R9 $INSTDIR normalizeInstallDirTimerDone
+  StrCmp $R9 $INSTDIR normalizeInstallDirChangeDone
   ${NSD_SetText} $mui.DirectoryPage.Directory $INSTDIR
 
-  normalizeInstallDirTimerDone:
+  normalizeInstallDirChangeDone:
+FunctionEnd
+
+Function .onVerifyInstDir
+  StrCpy $R9 $INSTDIR
+  Call normalizeRootInstallDir
+  StrCmp $R9 $INSTDIR verifyInstallDirDone
+  ${NSD_SetText} $mui.DirectoryPage.Directory $INSTDIR
+
+  verifyInstallDirDone:
 FunctionEnd
 
 !macro customInit
