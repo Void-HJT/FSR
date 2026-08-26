@@ -39,6 +39,8 @@ npm install
 
 开发模式（自动刷新）：
 
+在项目目录下用`powershell`启动
+
 ```bash
 npm run dev
 ```
