@@ -10,7 +10,7 @@ import {
   type ConcreteFileCategory,
   type FileCategory,
 } from './browser-files'
-import { advanceSelectionPath, findStableDropSlot, getGridBatchInsertionIndex, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
+import { advanceSelectionPath, findStableDropSlot, getRemainingInsertionIndex, hasMovedOneGridCell, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
 
 type AutomaticSortRule =
   | 'created-asc'
@@ -38,6 +38,7 @@ type BatchPointerGesture = {
   lastX: number
   lastY: number
   dragStarted: boolean
+  reorderActivated: boolean
   holdTimer: number | null
 }
 
@@ -135,6 +136,7 @@ export default function App() {
   const [customBaseIds, setCustomBaseIds] = useState<string[]>([])
   const [customPhase, setCustomPhase] = useState<CustomPhase>('building')
   const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>([])
+  const [batchDragging, setBatchDragging] = useState(false)
   const [dropPosition, setDropPosition] = useState<DropPosition | null>(null)
   const [dragPreviewIds, setDragPreviewIds] = useState<string[] | null>(null)
   const defaultSortRule: AutomaticSortRule = isDesktop ? 'created-asc' : 'modified-asc'
@@ -156,7 +158,6 @@ export default function App() {
   const dragOriginIds = useRef<string[]>([])
   const dragLayoutSlots = useRef<DragSlot[]>([])
   const dragSlots = useRef<DragSlot[]>([])
-  const currentBatchInsertionIndex = useRef(0)
   const dragFrame = useRef<number | null>(null)
   const dragLayoutDirty = useRef(false)
   const dragResizeObserver = useRef<ResizeObserver | null>(null)
@@ -213,6 +214,11 @@ export default function App() {
   const galleryOrderIds = isCustomBuilding ? customBaseIds : effectiveOrderedIds
   const galleryFiles = galleryOrderIds.map((id) => fileMap.get(id)).filter(Boolean) as FileItem[]
   const orderMap = useMemo(() => new Map(effectiveOrderedIds.map((id, index) => [id, index + 1])), [effectiveOrderedIds])
+  const galleryOrderMap = useMemo(() => {
+    if (!batchDragging) return orderMap
+    const selected = new Set(batchSelectedIds)
+    return new Map(effectiveOrderedIds.filter((id) => !selected.has(id)).map((id, index) => [id, index + 1]))
+  }, [batchDragging, batchSelectedIds, effectiveOrderedIds, orderMap])
 
   const replaceFiles = (next: FileItem[]) => {
     releaseBrowserPreviews(previews.current)
@@ -412,7 +418,9 @@ export default function App() {
   function captureDragSlots() {
     const gallery = galleryRef.current
     if (!gallery) return
-    dragLayoutSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card, index) => {
+    const cards = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]'))
+      .filter((card) => !card.classList.contains('drag-detached'))
+    dragLayoutSlots.current = cards.map((card, index) => {
       return {
         targetId: String(index),
         left: card.offsetLeft,
@@ -421,6 +429,19 @@ export default function App() {
         bottom: card.offsetTop + card.offsetHeight,
       }
     })
+    const sentinel = gallery.querySelector<HTMLElement>('[data-drop-sentinel]')
+    if (sentinel) {
+      const reference = dragLayoutSlots.current[0]
+      const width = reference ? reference.right - reference.left : 145
+      const height = reference ? reference.bottom - reference.top : 180
+      dragLayoutSlots.current.push({
+        targetId: String(cards.length),
+        left: sentinel.offsetLeft,
+        right: sentinel.offsetLeft + width,
+        top: sentinel.offsetTop,
+        bottom: sentinel.offsetTop + height,
+      })
+    }
     dragSlots.current = dragLayoutSlots.current
     dragLayoutDirty.current = false
   }
@@ -435,16 +456,14 @@ export default function App() {
     if (!match) return null
     const targetIndex = Number(match.slot.targetId)
     if (!Number.isInteger(targetIndex)) return null
-    const insertionIndex = getGridBatchInsertionIndex(
-      dragOriginIds.current.length,
-      draggedBatchIds.current.length,
+    const remainingCount = dragOriginIds.current.length - draggedBatchIds.current.length
+    const insertionIndex = getRemainingInsertionIndex(
+      remainingCount,
       targetIndex,
       match.side,
-      currentBatchInsertionIndex.current,
     )
     const markerSlot = dragLayoutSlots.current[insertionIndex]
     if (!markerSlot) return null
-    currentBatchInsertionIndex.current = insertionIndex
     return {
       targetId: match.slot.targetId,
       side: match.side,
@@ -498,6 +517,22 @@ export default function App() {
     const gesture = batchGesture.current
     if (!gesture?.dragStarted) return
     positionDragGhost(gesture.lastX, gesture.lastY)
+    if (dragLayoutDirty.current) captureDragSlots()
+    if (!gesture.reorderActivated) {
+      const firstSlot = dragLayoutSlots.current[0]
+      const thresholdX = firstSlot ? firstSlot.right - firstSlot.left : 145
+      const thresholdY = firstSlot ? firstSlot.bottom - firstSlot.top : 180
+      if (!hasMovedOneGridCell(
+        gesture.lastX - gesture.startX,
+        gesture.lastY - gesture.startY,
+        thresholdX,
+        thresholdY,
+      )) return
+      gesture.reorderActivated = true
+      currentDropPosition.current = null
+      setDropPosition(null)
+      setMessage(`正在拖动 ${draggedBatchIds.current.length} 个文件，请在目标位置松开。`)
+    }
     const didScroll = autoScrollGallery(gesture.lastY)
     updateBatchDrop(gesture.lastX, gesture.lastY)
     if (didScroll) scheduleBatchDragFrame()
@@ -510,7 +545,7 @@ export default function App() {
 
   function flushBatchDragPosition() {
     const gesture = batchGesture.current
-    if (!gesture?.dragStarted) return
+    if (!gesture?.dragStarted || !gesture.reorderActivated) return
     if (dragFrame.current !== null) {
       window.cancelAnimationFrame(dragFrame.current)
       dragFrame.current = null
@@ -523,7 +558,7 @@ export default function App() {
     if (gesture?.holdTimer != null) window.clearTimeout(gesture.holdTimer)
     draggedBatchIds.current = []
     dragOriginIds.current = []
-    currentBatchInsertionIndex.current = 0
+    setBatchDragging(false)
     if (dragFrame.current !== null) window.cancelAnimationFrame(dragFrame.current)
     dragFrame.current = null
     dragLayoutDirty.current = false
@@ -549,13 +584,10 @@ export default function App() {
     const selected = new Set(batchSelectedIds)
     draggedBatchIds.current = orderedIds.filter((item) => selected.has(item))
     dragOriginIds.current = [...orderedIds]
-    const firstMovingIndex = dragOriginIds.current.indexOf(draggedBatchIds.current[0])
-    currentBatchInsertionIndex.current = dragOriginIds.current
-      .slice(0, Math.max(0, firstMovingIndex))
-      .filter((id) => !selected.has(id)).length
     currentDropPosition.current = null
     setDropPosition(null)
-    captureDragSlots()
+    setBatchDragging(true)
+    dragLayoutDirty.current = true
     const gallery = galleryRef.current
     if (gallery) {
       gallery.classList.add('dragging')
@@ -583,7 +615,7 @@ export default function App() {
     gesture.lastX = clientX
     gesture.lastY = clientY
     scheduleBatchDragFrame()
-    setMessage(`正在拖动 ${draggedBatchIds.current.length} 个文件，请在目标间隙松开。`)
+    setMessage(`已提起 ${draggedBatchIds.current.length} 个文件；移动至少一个网格后开始排序。`)
   }
 
   function startBatchPointerGesture(event: ReactPointerEvent<HTMLButtonElement>, id: string) {
@@ -597,6 +629,7 @@ export default function App() {
       lastX: event.clientX,
       lastY: event.clientY,
       dragStarted: false,
+      reorderActivated: false,
       holdTimer: null,
     }
     batchGesture.current = gesture
@@ -634,6 +667,8 @@ export default function App() {
       if (moving.length && position) {
         setOrderedIds(insertBatchAtRemainingIndex(dragOriginIds.current, moving, position.insertionIndex))
         setMessage(`已在文件间隙插入 ${moving.length} 个文件。`)
+      } else {
+        setMessage('移动距离不足一个网格，文件顺序未改变。')
       }
     } else {
       setBatchSelectedIds((current) => current.filter((item) => item !== gesture.sourceId))
@@ -858,11 +893,11 @@ export default function App() {
                 />
               )}
               {galleryFiles.map((file) => {
-                const order = orderMap.get(file.id)
+                const order = galleryOrderMap.get(file.id)
                 const mediaUrl = file.previewUrl || (isDesktop ? `/api/scans/${sessionId}/files/${file.id}` : '')
                 return (
                   <button
-                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''}`}
+                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''} ${batchDragging && batchSelectedIds.includes(file.id) ? 'drag-detached' : ''}`}
                     key={file.id}
                     data-file-id={file.id}
                     onPointerDown={(event) => startSelectionDrag(event, file.id)}
@@ -890,6 +925,7 @@ export default function App() {
                   </button>
                 )
               })}
+              {batchDragging && <span className="drop-sentinel" data-drop-sentinel aria-hidden="true" />}
             </div>
           </section>
 

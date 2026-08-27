@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceSelectionPath, findStableDropSlot, getBatchInsertionIndex, getGridBatchInsertionIndex, insertBatchAtRemainingIndex } from './order-utils'
+import { advanceSelectionPath, findStableDropSlot, getBatchInsertionIndex, getRemainingInsertionIndex, hasMovedOneGridCell, insertBatchAtRemainingIndex } from './order-utils'
 
 describe('insertBatchAtRemainingIndex', () => {
   it('inserts a non-contiguous group into the remaining-file sequence', () => {
@@ -52,9 +52,9 @@ describe('getBatchInsertionIndex', () => {
   })
 })
 
-describe('getGridBatchInsertionIndex', () => {
+describe('getRemainingInsertionIndex', () => {
   it('uses the current grid position after the remaining files move forward', () => {
-    const insertionIndex = getGridBatchInsertionIndex(14, 3, 2, 'after', 6)
+    const insertionIndex = getRemainingInsertionIndex(11, 2, 'after')
     const result = insertBatchAtRemainingIndex(
       Array.from({ length: 14 }, (_, index) => String(index + 1)),
       ['1', '2', '3'],
@@ -65,10 +65,18 @@ describe('getGridBatchInsertionIndex', () => {
     expect(result.slice(0, 6)).toEqual(['4', '5', '6', '1', '2', '3'])
   })
 
-  it('treats every cell occupied by the moving group as its first position', () => {
-    expect(getGridBatchInsertionIndex(14, 3, 6, 'before', 6)).toBe(6)
-    expect(getGridBatchInsertionIndex(14, 3, 7, 'after', 6)).toBe(6)
-    expect(getGridBatchInsertionIndex(14, 3, 8, 'after', 6)).toBe(6)
+  it('supports both boundaries of the grid without counting moving files', () => {
+    expect(getRemainingInsertionIndex(11, 0, 'before')).toBe(0)
+    expect(getRemainingInsertionIndex(11, 10, 'after')).toBe(11)
+  })
+})
+
+describe('hasMovedOneGridCell', () => {
+  it('activates only after the pointer travels one normalized grid length', () => {
+    expect(hasMovedOneGridCell(99, 0, 100, 180)).toBe(false)
+    expect(hasMovedOneGridCell(100, 0, 100, 180)).toBe(true)
+    expect(hasMovedOneGridCell(0, 180, 100, 180)).toBe(true)
+    expect(hasMovedOneGridCell(80, 108, 100, 180)).toBe(true)
   })
 })
 

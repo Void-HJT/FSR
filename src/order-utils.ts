@@ -39,16 +39,24 @@ export function getBatchInsertionIndex(
   return Math.max(0, Math.min(Math.max(0, orderLength - movingCount), requested))
 }
 
-export function getGridBatchInsertionIndex(
-  orderLength: number,
-  movingCount: number,
+export function getRemainingInsertionIndex(
+  remainingCount: number,
   targetIndex: number,
   side: DropSide,
-  currentInsertionIndex: number,
 ): number {
-  const currentEnd = currentInsertionIndex + movingCount - 1
-  if (targetIndex >= currentInsertionIndex && targetIndex <= currentEnd) return currentInsertionIndex
-  return getBatchInsertionIndex(orderLength, movingCount, targetIndex, side)
+  const requested = targetIndex + (side === 'after' ? 1 : 0)
+  return Math.max(0, Math.min(remainingCount, requested))
+}
+
+export function hasMovedOneGridCell(
+  deltaX: number,
+  deltaY: number,
+  cellWidth: number,
+  cellHeight: number,
+): boolean {
+  const normalizedX = deltaX / Math.max(1, cellWidth)
+  const normalizedY = deltaY / Math.max(1, cellHeight)
+  return Math.hypot(normalizedX, normalizedY) >= 1
 }
 
 function distanceToSlot(slot: DragSlot, pointerX: number, pointerY: number): number {
