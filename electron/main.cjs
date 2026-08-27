@@ -19,6 +19,7 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 680,
     title: 'FSR',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     autoHideMenuBar: true,
     backgroundColor: '#f5f4ef',
     webPreferences: {

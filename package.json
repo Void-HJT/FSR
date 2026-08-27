@@ -54,10 +54,12 @@
       "dist/**/*",
       "dist-server/**/*",
       "electron/**/*",
+      "build/icon.png",
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
