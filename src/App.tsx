@@ -156,6 +156,9 @@ export default function App() {
   const dragOriginIds = useRef<string[]>([])
   const dragLayoutSlots = useRef<DragSlot[]>([])
   const dragSlots = useRef<DragSlot[]>([])
+  const dragFrame = useRef<number | null>(null)
+  const dragLayoutDirty = useRef(false)
+  const dragResizeObserver = useRef<ResizeObserver | null>(null)
   const currentDropPosition = useRef<DropPosition | null>(null)
   const dragGhost = useRef<HTMLElement | null>(null)
   const batchGesture = useRef<BatchPointerGesture | null>(null)
@@ -190,6 +193,9 @@ export default function App() {
       releaseBrowserPreviews(previews.current)
       const holdTimer = batchGesture.current?.holdTimer
       if (holdTimer != null) window.clearTimeout(holdTimer)
+      if (dragFrame.current !== null) window.cancelAnimationFrame(dragFrame.current)
+      dragResizeObserver.current?.disconnect()
+      galleryRef.current?.classList.remove('dragging')
       dragGhost.current?.remove()
       window.removeEventListener('pointerup', finishPointers)
       window.removeEventListener('pointercancel', cancelPointers)
@@ -405,18 +411,18 @@ export default function App() {
   function captureDragSlots() {
     const gallery = galleryRef.current
     if (!gallery) return
-    const galleryBounds = gallery.getBoundingClientRect()
-    dragLayoutSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card) => {
-      const bounds = card.getBoundingClientRect()
+    dragLayoutSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card, index) => {
+      const targetId = dragOriginIds.current[index] ?? card.dataset.fileId ?? ''
       return {
-        targetId: card.dataset.fileId!,
-        left: bounds.left - galleryBounds.left + gallery.scrollLeft,
-        right: bounds.right - galleryBounds.left + gallery.scrollLeft,
-        top: bounds.top - galleryBounds.top + gallery.scrollTop,
-        bottom: bounds.bottom - galleryBounds.top + gallery.scrollTop,
+        targetId,
+        left: card.offsetLeft,
+        right: card.offsetLeft + card.offsetWidth,
+        top: card.offsetTop,
+        bottom: card.offsetTop + card.offsetHeight,
       }
-    })
+    }).filter((slot) => Boolean(slot.targetId))
     dragSlots.current = excludeMovingDragSlots(dragLayoutSlots.current, draggedBatchIds.current)
+    dragLayoutDirty.current = false
   }
 
   function getDropPosition(clientX: number, clientY: number): DropPosition | null {
@@ -448,12 +454,26 @@ export default function App() {
     }
   }
 
-  function updateBatchDrop(clientX: number, clientY: number) {
+  function updateBatchDrop(clientX: number, clientY: number, forceMeasure = false) {
+    if (forceMeasure || dragLayoutDirty.current) captureDragSlots()
     const position = getDropPosition(clientX, clientY)
     if (!position) return
+    const previous = currentDropPosition.current
     currentDropPosition.current = position
-    setDropPosition(position)
-    setDragPreviewIds(insertBatchAtRemainingIndex(dragOriginIds.current, draggedBatchIds.current, position.insertionIndex))
+    if (
+      !previous
+      || previous.targetId !== position.targetId
+      || previous.side !== position.side
+      || previous.insertionIndex !== position.insertionIndex
+      || previous.markerLeft !== position.markerLeft
+      || previous.markerTop !== position.markerTop
+      || previous.markerHeight !== position.markerHeight
+    ) {
+      setDropPosition(position)
+    }
+    if (!previous || previous.insertionIndex !== position.insertionIndex) {
+      setDragPreviewIds(insertBatchAtRemainingIndex(dragOriginIds.current, draggedBatchIds.current, position.insertionIndex))
+    }
   }
 
   function positionDragGhost(clientX: number, clientY: number) {
@@ -462,12 +482,39 @@ export default function App() {
     dragGhost.current.style.top = `${clientY + 16}px`
   }
 
-  function autoScrollGallery(clientY: number) {
+  function autoScrollGallery(clientY: number): boolean {
     const gallery = galleryRef.current
-    if (!gallery) return
+    if (!gallery) return false
     const bounds = gallery.getBoundingClientRect()
+    const previousScrollTop = gallery.scrollTop
     if (clientY < bounds.top + 36) gallery.scrollTop -= 16
     else if (clientY > bounds.bottom - 36) gallery.scrollTop += 16
+    return gallery.scrollTop !== previousScrollTop
+  }
+
+  function runBatchDragFrame() {
+    dragFrame.current = null
+    const gesture = batchGesture.current
+    if (!gesture?.dragStarted) return
+    positionDragGhost(gesture.lastX, gesture.lastY)
+    const didScroll = autoScrollGallery(gesture.lastY)
+    updateBatchDrop(gesture.lastX, gesture.lastY)
+    if (didScroll) scheduleBatchDragFrame()
+  }
+
+  function scheduleBatchDragFrame() {
+    if (dragFrame.current !== null) return
+    dragFrame.current = window.requestAnimationFrame(runBatchDragFrame)
+  }
+
+  function flushBatchDragPosition() {
+    const gesture = batchGesture.current
+    if (!gesture?.dragStarted) return
+    if (dragFrame.current !== null) {
+      window.cancelAnimationFrame(dragFrame.current)
+      dragFrame.current = null
+    }
+    updateBatchDrop(gesture.lastX, gesture.lastY, true)
   }
 
   function clearBatchReorderVisuals() {
@@ -475,6 +522,12 @@ export default function App() {
     if (gesture?.holdTimer != null) window.clearTimeout(gesture.holdTimer)
     draggedBatchIds.current = []
     dragOriginIds.current = []
+    if (dragFrame.current !== null) window.cancelAnimationFrame(dragFrame.current)
+    dragFrame.current = null
+    dragLayoutDirty.current = false
+    dragResizeObserver.current?.disconnect()
+    dragResizeObserver.current = null
+    galleryRef.current?.classList.remove('dragging')
     dragLayoutSlots.current = []
     dragSlots.current = []
     currentDropPosition.current = null
@@ -497,6 +550,18 @@ export default function App() {
     currentDropPosition.current = null
     setDropPosition(null)
     captureDragSlots()
+    const gallery = galleryRef.current
+    if (gallery) {
+      gallery.classList.add('dragging')
+      dragResizeObserver.current?.disconnect()
+      const observer = new ResizeObserver(() => {
+        dragLayoutDirty.current = true
+        scheduleBatchDragFrame()
+      })
+      observer.observe(gallery)
+      gallery.querySelectorAll<HTMLElement>('[data-file-id]').forEach((card) => observer.observe(card))
+      dragResizeObserver.current = observer
+    }
 
     const ghost = document.createElement('div')
     ghost.className = 'drag-ghost'
@@ -509,8 +574,9 @@ export default function App() {
     ghost.append(icon, count, label)
     document.body.append(ghost)
     dragGhost.current = ghost
-    positionDragGhost(clientX, clientY)
-    updateBatchDrop(clientX, clientY)
+    gesture.lastX = clientX
+    gesture.lastY = clientY
+    scheduleBatchDragFrame()
     setMessage(`正在拖动 ${draggedBatchIds.current.length} 个文件，请在目标间隙松开。`)
   }
 
@@ -547,9 +613,7 @@ export default function App() {
       beginBatchReorder(event.clientX, event.clientY)
     }
     if (gesture.dragStarted) {
-      positionDragGhost(event.clientX, event.clientY)
-      autoScrollGallery(event.clientY)
-      updateBatchDrop(event.clientX, event.clientY)
+      scheduleBatchDragFrame()
     }
   }
 
@@ -558,6 +622,7 @@ export default function App() {
     if (!gesture) return
     if (gesture.holdTimer !== null) window.clearTimeout(gesture.holdTimer)
     if (gesture.dragStarted) {
+      flushBatchDragPosition()
       const moving = [...draggedBatchIds.current]
       const position = currentDropPosition.current
       if (moving.length && position) {
@@ -583,6 +648,8 @@ export default function App() {
     const gesture = batchGesture.current
     if (!gesture || gesture.pointerId !== event.pointerId) return
     event.preventDefault()
+    gesture.lastX = event.clientX
+    gesture.lastY = event.clientY
     finishBatchGesture()
   }
 

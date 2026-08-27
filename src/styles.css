@@ -46,6 +46,7 @@ button.secondary { border: 1px solid #cfd3cc; background: #f8f8f4; color: #34443
 .gallery { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: 11px; max-height: 635px; padding: 0 18px 20px; overflow: auto; }
 .file-card { position: relative; min-width: 0; padding: 7px; border: 1px solid transparent; border-radius: 12px; color: inherit; text-align: left; background: transparent; user-select: none; -webkit-user-select: none; transition: transform .16s, border-color .16s, background .16s; }
 .file-card:hover { transform: translateY(-2px); background: #f5f6f0; }
+.gallery.dragging .file-card:hover { transform: none; }
 .file-card.selected { border-color: #ccd7cf; background: #f5f7f3; }
 .file-card.batch-selected { border-color: #33745a; background: #e7f4ec; box-shadow: 0 0 0 3px rgba(51,116,90,.14); cursor: grab; touch-action: none; }
 .file-card.batch-selected:active { cursor: grabbing; }
