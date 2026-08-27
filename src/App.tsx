@@ -10,7 +10,7 @@ import {
   type ConcreteFileCategory,
   type FileCategory,
 } from './browser-files'
-import { advanceSelectionPath, findStableDropSlot, insertBatchAtIndex, type DragSlot } from './order-utils'
+import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
 
 type AutomaticSortRule =
   | 'created-asc'
@@ -405,16 +405,19 @@ export default function App() {
     const gallery = galleryRef.current
     if (!gallery) return
     const galleryBounds = gallery.getBoundingClientRect()
-    dragSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card) => {
-      const bounds = card.getBoundingClientRect()
-      return {
-        targetId: card.dataset.fileId!,
-        left: bounds.left - galleryBounds.left + gallery.scrollLeft,
-        right: bounds.right - galleryBounds.left + gallery.scrollLeft,
-        top: bounds.top - galleryBounds.top + gallery.scrollTop,
-        bottom: bounds.bottom - galleryBounds.top + gallery.scrollTop,
-      }
-    })
+    dragSlots.current = excludeMovingDragSlots(
+      Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card) => {
+        const bounds = card.getBoundingClientRect()
+        return {
+          targetId: card.dataset.fileId!,
+          left: bounds.left - galleryBounds.left + gallery.scrollLeft,
+          right: bounds.right - galleryBounds.left + gallery.scrollLeft,
+          top: bounds.top - galleryBounds.top + gallery.scrollTop,
+          bottom: bounds.bottom - galleryBounds.top + gallery.scrollTop,
+        }
+      }),
+      draggedBatchIds.current,
+    )
   }
 
   function getDropPosition(clientX: number, clientY: number): DropPosition | null {
@@ -425,7 +428,9 @@ export default function App() {
     const pointerY = clientY - galleryBounds.top + gallery.scrollTop
     const match = findStableDropSlot(dragSlots.current, pointerX, pointerY, currentDropPosition.current)
     if (!match) return null
-    const targetIndex = dragOriginIds.current.indexOf(match.slot.targetId)
+    const moving = new Set(draggedBatchIds.current)
+    const remainingIds = dragOriginIds.current.filter((id) => !moving.has(id))
+    const targetIndex = remainingIds.indexOf(match.slot.targetId)
     if (targetIndex < 0) return null
     return {
       targetId: match.slot.targetId,
@@ -442,7 +447,7 @@ export default function App() {
     if (!position) return
     currentDropPosition.current = position
     setDropPosition(position)
-    setDragPreviewIds(insertBatchAtIndex(dragOriginIds.current, draggedBatchIds.current, position.insertionIndex))
+    setDragPreviewIds(insertBatchAtRemainingIndex(dragOriginIds.current, draggedBatchIds.current, position.insertionIndex))
   }
 
   function positionDragGhost(clientX: number, clientY: number) {
@@ -549,7 +554,7 @@ export default function App() {
       const moving = [...draggedBatchIds.current]
       const position = currentDropPosition.current
       if (moving.length && position) {
-        setOrderedIds(insertBatchAtIndex(dragOriginIds.current, moving, position.insertionIndex))
+        setOrderedIds(insertBatchAtRemainingIndex(dragOriginIds.current, moving, position.insertionIndex))
         setMessage(`已在文件间隙插入 ${moving.length} 个文件。`)
       }
     } else {

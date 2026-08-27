@@ -1,10 +1,11 @@
-export function insertBatchAtIndex(order: string[], movingIds: string[], insertionIndex: number): string[] {
+export function insertBatchAtRemainingIndex(order: string[], movingIds: string[], insertionIndex: number): string[] {
   const movingSet = new Set(movingIds)
   if (movingIds.length === 0) return [...order]
   const moving = order.filter((id) => movingSet.has(id))
-  const index = Math.max(0, Math.min(order.length, Math.trunc(insertionIndex)))
-  const before = order.slice(0, index).filter((id) => !movingSet.has(id))
-  const after = order.slice(index).filter((id) => !movingSet.has(id))
+  const remaining = order.filter((id) => !movingSet.has(id))
+  const index = Math.max(0, Math.min(remaining.length, Math.trunc(insertionIndex)))
+  const before = remaining.slice(0, index)
+  const after = remaining.slice(index)
   return [...before, ...moving, ...after]
 }
 
@@ -24,6 +25,11 @@ export interface DragSlot {
   right: number
   top: number
   bottom: number
+}
+
+export function excludeMovingDragSlots(slots: DragSlot[], movingIds: string[]): DragSlot[] {
+  const moving = new Set(movingIds)
+  return slots.filter((slot) => !moving.has(slot.targetId))
 }
 
 export type DropSide = 'before' | 'after'

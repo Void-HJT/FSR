@@ -1,17 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { advanceSelectionPath, findStableDropSlot, insertBatchAtIndex } from './order-utils'
+import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, insertBatchAtRemainingIndex } from './order-utils'
 
-describe('insertBatchAtIndex', () => {
-  it('inserts a non-contiguous group at a gap while preserving visual order', () => {
-    expect(insertBatchAtIndex(['a', 'b', 'c', 'd', 'e'], ['d', 'b'], 3)).toEqual(['a', 'c', 'b', 'd', 'e'])
+describe('insertBatchAtRemainingIndex', () => {
+  it('inserts a non-contiguous group into the remaining-file sequence', () => {
+    expect(insertBatchAtRemainingIndex(['a', 'b', 'c', 'd', 'e'], ['d', 'b'], 2)).toEqual(['a', 'c', 'b', 'd', 'e'])
   })
 
-  it('supports the gap after the final image', () => {
-    expect(insertBatchAtIndex(['a', 'b', 'c', 'd'], ['b', 'd'], 4)).toEqual(['a', 'c', 'b', 'd'])
+  it('supports the gap after the final remaining file', () => {
+    expect(insertBatchAtRemainingIndex(['a', 'b', 'c', 'd'], ['b', 'd'], 2)).toEqual(['a', 'c', 'b', 'd'])
   })
 
-  it('allows a gap next to an image in the moving group', () => {
-    expect(insertBatchAtIndex(['a', 'b', 'c', 'd', 'e'], ['b', 'd'], 2)).toEqual(['a', 'b', 'd', 'c', 'e'])
+  it('treats adjacent moving files as one block while retaining every other position', () => {
+    expect(insertBatchAtRemainingIndex(['a', 'b', 'c', 'd', 'e', 'f'], ['b', 'c', 'd'], 2)).toEqual([
+      'a', 'e', 'b', 'c', 'd', 'f',
+    ])
+  })
+
+  it('keeps the original order when a moving block is inserted back into its remaining gap', () => {
+    expect(insertBatchAtRemainingIndex(['a', 'b', 'c', 'd', 'e'], ['b', 'c', 'd'], 1)).toEqual([
+      'a', 'b', 'c', 'd', 'e',
+    ])
   })
 })
 
@@ -54,5 +62,16 @@ describe('findStableDropSlot', () => {
       slot: { targetId: 'a' },
       side: 'after',
     })
+  })
+
+  it('cannot target any position belonging to the moving group', () => {
+    const available = excludeMovingDragSlots([
+      ...slots,
+      { targetId: 'c', left: 220, right: 320, top: 0, bottom: 100 },
+      { targetId: 'd', left: 330, right: 430, top: 0, bottom: 100 },
+    ], ['b', 'c', 'd'])
+
+    expect(available.map((slot) => slot.targetId)).toEqual(['a'])
+    expect(findStableDropSlot(available, 275, 50)).toMatchObject({ slot: { targetId: 'a' } })
   })
 })
