@@ -214,11 +214,6 @@ export default function App() {
   const galleryOrderIds = isCustomBuilding ? customBaseIds : effectiveOrderedIds
   const galleryFiles = galleryOrderIds.map((id) => fileMap.get(id)).filter(Boolean) as FileItem[]
   const orderMap = useMemo(() => new Map(effectiveOrderedIds.map((id, index) => [id, index + 1])), [effectiveOrderedIds])
-  const galleryOrderMap = useMemo(() => {
-    if (!batchDragging) return orderMap
-    const selected = new Set(batchSelectedIds)
-    return new Map(effectiveOrderedIds.filter((id) => !selected.has(id)).map((id, index) => [id, index + 1]))
-  }, [batchDragging, batchSelectedIds, effectiveOrderedIds, orderMap])
 
   const replaceFiles = (next: FileItem[]) => {
     releaseBrowserPreviews(previews.current)
@@ -419,7 +414,6 @@ export default function App() {
     const gallery = galleryRef.current
     if (!gallery) return
     const cards = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]'))
-      .filter((card) => !card.classList.contains('drag-detached'))
     dragLayoutSlots.current = cards.map((card, index) => {
       return {
         targetId: String(index),
@@ -429,20 +423,8 @@ export default function App() {
         bottom: card.offsetTop + card.offsetHeight,
       }
     })
-    const sentinel = gallery.querySelector<HTMLElement>('[data-drop-sentinel]')
-    if (sentinel) {
-      const reference = dragLayoutSlots.current[0]
-      const width = reference ? reference.right - reference.left : 145
-      const height = reference ? reference.bottom - reference.top : 180
-      dragLayoutSlots.current.push({
-        targetId: String(cards.length),
-        left: sentinel.offsetLeft,
-        right: sentinel.offsetLeft + width,
-        top: sentinel.offsetTop,
-        bottom: sentinel.offsetTop + height,
-      })
-    }
-    dragSlots.current = dragLayoutSlots.current
+    const remainingCount = dragOriginIds.current.length - draggedBatchIds.current.length
+    dragSlots.current = dragLayoutSlots.current.slice(0, remainingCount + 1)
     dragLayoutDirty.current = false
   }
 
@@ -493,6 +475,8 @@ export default function App() {
     }
     if (!previous || previous.insertionIndex !== position.insertionIndex) {
       setDragPreviewIds(insertBatchAtRemainingIndex(dragOriginIds.current, draggedBatchIds.current, position.insertionIndex))
+      dragLayoutDirty.current = true
+      scheduleBatchDragFrame()
     }
   }
 
@@ -603,13 +587,23 @@ export default function App() {
 
     const ghost = document.createElement('div')
     ghost.className = 'drag-ghost'
+    const sourceCard = gallery?.querySelector<HTMLElement>(`[data-file-id="${draggedBatchIds.current[0]}"]`)
+    const preview = sourceCard?.querySelector<HTMLElement>('.thumb-wrap')?.cloneNode(true) as HTMLElement | undefined
+    if (preview) {
+      preview.classList.add('drag-ghost-preview')
+      preview.querySelectorAll('.file-type-badge, .order-badge, .swap-label').forEach((element) => element.remove())
+      ghost.append(preview)
+    }
+    const ghostInfo = document.createElement('div')
+    ghostInfo.className = 'drag-ghost-info'
     const icon = document.createElement('span')
     icon.textContent = '▧'
     const count = document.createElement('strong')
     count.textContent = `${draggedBatchIds.current.length}`
     const label = document.createElement('em')
     label.textContent = '个文件'
-    ghost.append(icon, count, label)
+    ghostInfo.append(icon, count, label)
+    ghost.append(ghostInfo)
     document.body.append(ghost)
     dragGhost.current = ghost
     gesture.lastX = clientX
@@ -893,11 +887,11 @@ export default function App() {
                 />
               )}
               {galleryFiles.map((file) => {
-                const order = galleryOrderMap.get(file.id)
+                const order = orderMap.get(file.id)
                 const mediaUrl = file.previewUrl || (isDesktop ? `/api/scans/${sessionId}/files/${file.id}` : '')
                 return (
                   <button
-                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''} ${batchDragging && batchSelectedIds.includes(file.id) ? 'drag-detached' : ''}`}
+                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''} ${batchDragging && batchSelectedIds.includes(file.id) ? 'drag-placeholder' : ''}`}
                     key={file.id}
                     data-file-id={file.id}
                     onPointerDown={(event) => startSelectionDrag(event, file.id)}
@@ -925,7 +919,6 @@ export default function App() {
                   </button>
                 )
               })}
-              {batchDragging && <span className="drop-sentinel" data-drop-sentinel aria-hidden="true" />}
             </div>
           </section>
 

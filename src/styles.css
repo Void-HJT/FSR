@@ -47,8 +47,7 @@ button.secondary { border: 1px solid #cfd3cc; background: #f8f8f4; color: #34443
 .file-card { position: relative; min-width: 0; padding: 7px; border: 1px solid transparent; border-radius: 12px; color: inherit; text-align: left; background: transparent; user-select: none; -webkit-user-select: none; transition: transform .16s, border-color .16s, background .16s; }
 .file-card:hover { transform: translateY(-2px); background: #f5f6f0; }
 .gallery.dragging .file-card:hover { transform: none; }
-.file-card.drag-detached { position: absolute; width: 0; height: 0; padding: 0; border: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
-.drop-sentinel { min-width: 0; height: 1px; visibility: hidden; pointer-events: none; }
+.file-card.drag-placeholder { opacity: .58; border-style: dashed; pointer-events: none; }
 .file-card.selected { border-color: #ccd7cf; background: #f5f7f3; }
 .file-card.batch-selected { border-color: #33745a; background: #e7f4ec; box-shadow: 0 0 0 3px rgba(51,116,90,.14); cursor: grab; touch-action: none; }
 .file-card.batch-selected:active { cursor: grabbing; }
@@ -65,10 +64,12 @@ button.secondary { border: 1px solid #cfd3cc; background: #f8f8f4; color: #34443
 .file-type-badge { position: absolute; top: 7px; right: 7px; padding: 4px 7px; border-radius: 999px; color: #fff; background: rgba(31,51,41,.82); font-size: 10px; font-weight: 800; }
 .order-badge { position: absolute; top: 7px; left: 7px; min-width: 26px; height: 26px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; color: #fff; background: #d45c34; box-shadow: 0 2px 8px rgba(83,34,17,.3); font-size: 12px; font-weight: 850; }
 .swap-label { position: absolute; right: 7px; bottom: 7px; padding: 5px 8px; border-radius: 7px; color: #fff; background: rgba(31,51,41,.9); font-size: 11px; font-weight: 800; }
-.drag-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 9999; display: flex; align-items: center; gap: 7px; padding: 10px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; color: #fff; background: rgba(31,51,41,.94); box-shadow: 0 10px 28px rgba(0,0,0,.28); font-family: "Segoe UI", "Microsoft YaHei", sans-serif; pointer-events: none; }
-.drag-ghost span { font-size: 22px; }
-.drag-ghost strong { min-width: 24px; height: 24px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; background: #d25b34; font-size: 13px; }
-.drag-ghost em { font-size: 12px; font-style: normal; font-weight: 750; }
+.drag-ghost { position: fixed; top: -1000px; left: -1000px; z-index: 9999; display: flex; align-items: center; gap: 9px; padding: 8px 11px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; color: #fff; background: rgba(31,51,41,.94); box-shadow: 0 10px 28px rgba(0,0,0,.28); font-family: "Segoe UI", "Microsoft YaHei", sans-serif; pointer-events: none; }
+.drag-ghost-preview { width: 58px; height: 46px; flex: 0 0 auto; margin: 0; border-radius: 7px; opacity: .9; }
+.drag-ghost-info { display: flex; align-items: center; gap: 7px; }
+.drag-ghost-info > span { font-size: 22px; }
+.drag-ghost-info > strong { min-width: 24px; height: 24px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; background: #d25b34; font-size: 13px; }
+.drag-ghost-info > em { font-size: 12px; font-style: normal; font-weight: 750; }
 .original-name { display: block; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; }
 .metadata { display: block; margin-top: 3px; color: #89908b; font-size: 11px; }
 
