@@ -428,9 +428,7 @@ export default function App() {
     const pointerY = clientY - galleryBounds.top + gallery.scrollTop
     const match = findStableDropSlot(dragSlots.current, pointerX, pointerY, currentDropPosition.current)
     if (!match) return null
-    const moving = new Set(draggedBatchIds.current)
-    const remainingIds = dragOriginIds.current.filter((id) => !moving.has(id))
-    const targetIndex = remainingIds.indexOf(match.slot.targetId)
+    const targetIndex = dragOriginIds.current.indexOf(match.slot.targetId)
     if (targetIndex < 0) return null
     return {
       targetId: match.slot.targetId,

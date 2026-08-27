@@ -21,6 +21,14 @@ describe('insertBatchAtRemainingIndex', () => {
       'a', 'b', 'c', 'd', 'e',
     ])
   })
+
+  it('places the first moving file at the requested absolute grid position', () => {
+    const order = Array.from({ length: 14 }, (_, index) => String(index + 1))
+    const result = insertBatchAtRemainingIndex(order, ['1', '2', '3'], 6)
+
+    expect(result).toEqual(['4', '5', '6', '7', '8', '9', '1', '2', '3', '10', '11', '12', '13', '14'])
+    expect(result.indexOf('1')).toBe(6)
+  })
 })
 
 describe('advanceSelectionPath', () => {
