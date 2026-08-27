@@ -163,6 +163,7 @@ export default function App() {
   const dragResizeObserver = useRef<ResizeObserver | null>(null)
   const currentDropPosition = useRef<DropPosition | null>(null)
   const dragGhost = useRef<HTMLElement | null>(null)
+  const dragGhostRange = useRef<HTMLElement | null>(null)
   const batchGesture = useRef<BatchPointerGesture | null>(null)
   const galleryRef = useRef<HTMLDivElement | null>(null)
   const finishBatchGestureRef = useRef<() => void>(() => undefined)
@@ -199,6 +200,7 @@ export default function App() {
       dragResizeObserver.current?.disconnect()
       galleryRef.current?.classList.remove('dragging')
       dragGhost.current?.remove()
+      dragGhostRange.current = null
       window.removeEventListener('pointerup', finishPointers)
       window.removeEventListener('pointercancel', cancelPointers)
       window.removeEventListener('blur', finishPointers)
@@ -413,7 +415,9 @@ export default function App() {
   function captureDragSlots() {
     const gallery = galleryRef.current
     if (!gallery) return
-    const cards = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]'))
+    const cards = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).filter(
+      (card) => !card.classList.contains('drag-detached'),
+    )
     dragLayoutSlots.current = cards.map((card, index) => {
       return {
         targetId: String(index),
@@ -423,8 +427,20 @@ export default function App() {
         bottom: card.offsetTop + card.offsetHeight,
       }
     })
-    const remainingCount = dragOriginIds.current.length - draggedBatchIds.current.length
-    dragSlots.current = dragLayoutSlots.current.slice(0, remainingCount + 1)
+    const sentinel = gallery.querySelector<HTMLElement>('[data-drop-sentinel]')
+    if (sentinel) {
+      const reference = dragLayoutSlots.current[0]
+      const width = reference ? reference.right - reference.left : 1
+      const height = reference ? reference.bottom - reference.top : 1
+      dragLayoutSlots.current.push({
+        targetId: String(cards.length),
+        left: sentinel.offsetLeft,
+        right: sentinel.offsetLeft + width,
+        top: sentinel.offsetTop,
+        bottom: sentinel.offsetTop + height,
+      })
+    }
+    dragSlots.current = dragLayoutSlots.current
     dragLayoutDirty.current = false
   }
 
@@ -475,8 +491,11 @@ export default function App() {
     }
     if (!previous || previous.insertionIndex !== position.insertionIndex) {
       setDragPreviewIds(insertBatchAtRemainingIndex(dragOriginIds.current, draggedBatchIds.current, position.insertionIndex))
-      dragLayoutDirty.current = true
-      scheduleBatchDragFrame()
+      if (dragGhostRange.current) {
+        const first = position.insertionIndex + 1
+        const last = first + draggedBatchIds.current.length - 1
+        dragGhostRange.current.textContent = `预计编号 ${first}–${last}`
+      }
     }
   }
 
@@ -554,6 +573,7 @@ export default function App() {
     currentDropPosition.current = null
     dragGhost.current?.remove()
     dragGhost.current = null
+    dragGhostRange.current = null
     setDragPreviewIds(null)
     setDropPosition(null)
   }
@@ -587,13 +607,25 @@ export default function App() {
 
     const ghost = document.createElement('div')
     ghost.className = 'drag-ghost'
-    const sourceCard = gallery?.querySelector<HTMLElement>(`[data-file-id="${draggedBatchIds.current[0]}"]`)
-    const preview = sourceCard?.querySelector<HTMLElement>('.thumb-wrap')?.cloneNode(true) as HTMLElement | undefined
-    if (preview) {
+    const stack = document.createElement('div')
+    stack.className = 'drag-ghost-stack'
+    draggedBatchIds.current.slice(0, 3).forEach((id, index) => {
+      const sourceCard = gallery?.querySelector<HTMLElement>(`[data-file-id="${id}"]`)
+      const preview = sourceCard?.querySelector<HTMLElement>('.thumb-wrap')?.cloneNode(true) as HTMLElement | undefined
+      if (!preview) return
       preview.classList.add('drag-ghost-preview')
+      preview.style.setProperty('--stack-x', `${index * 7}px`)
+      preview.style.setProperty('--stack-y', `${index * 4}px`)
+      preview.style.setProperty('--stack-rotate', `${(index - 1) * 3}deg`)
+      preview.style.zIndex = String(index + 1)
       preview.querySelectorAll('.file-type-badge, .order-badge, .swap-label').forEach((element) => element.remove())
-      ghost.append(preview)
+      stack.append(preview)
+    })
+    if (stack.childElementCount > 0) {
+      ghost.append(stack)
     }
+    const meta = document.createElement('div')
+    meta.className = 'drag-ghost-meta'
     const ghostInfo = document.createElement('div')
     ghostInfo.className = 'drag-ghost-info'
     const icon = document.createElement('span')
@@ -603,7 +635,17 @@ export default function App() {
     const label = document.createElement('em')
     label.textContent = '个文件'
     ghostInfo.append(icon, count, label)
-    ghost.append(ghostInfo)
+    const range = document.createElement('div')
+    range.className = 'drag-ghost-range'
+    const firstMovingIndex = dragOriginIds.current.indexOf(draggedBatchIds.current[0])
+    const selectedSet = new Set(draggedBatchIds.current)
+    const initialInsertion = dragOriginIds.current
+      .slice(0, Math.max(0, firstMovingIndex))
+      .filter((id) => !selectedSet.has(id)).length
+    range.textContent = `预计编号 ${initialInsertion + 1}–${initialInsertion + draggedBatchIds.current.length}`
+    dragGhostRange.current = range
+    meta.append(ghostInfo, range)
+    ghost.append(meta)
     document.body.append(ghost)
     dragGhost.current = ghost
     gesture.lastX = clientX
@@ -891,7 +933,7 @@ export default function App() {
                 const mediaUrl = file.previewUrl || (isDesktop ? `/api/scans/${sessionId}/files/${file.id}` : '')
                 return (
                   <button
-                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''} ${batchDragging && batchSelectedIds.includes(file.id) ? 'drag-placeholder' : ''}`}
+                    className={`file-card ${order ? 'selected' : ''} ${batchSelectedIds.includes(file.id) ? 'batch-selected' : ''} ${batchDragging && batchSelectedIds.includes(file.id) ? 'drag-detached' : ''}`}
                     key={file.id}
                     data-file-id={file.id}
                     onPointerDown={(event) => startSelectionDrag(event, file.id)}
@@ -919,6 +961,7 @@ export default function App() {
                   </button>
                 )
               })}
+              {batchDragging && <span className="drop-sentinel" data-drop-sentinel aria-hidden="true" />}
             </div>
           </section>
 
