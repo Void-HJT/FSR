@@ -48,7 +48,7 @@ export function getRemainingInsertionIndex(
   return Math.max(0, Math.min(remainingCount, requested))
 }
 
-export function hasMovedOneGridCell(
+export function hasMovedHalfGridCell(
   deltaX: number,
   deltaY: number,
   cellWidth: number,
@@ -56,7 +56,7 @@ export function hasMovedOneGridCell(
 ): boolean {
   const normalizedX = deltaX / Math.max(1, cellWidth)
   const normalizedY = deltaY / Math.max(1, cellHeight)
-  return Math.hypot(normalizedX, normalizedY) >= 1
+  return Math.hypot(normalizedX, normalizedY) >= 0.5
 }
 
 function distanceToSlot(slot: DragSlot, pointerX: number, pointerY: number): number {
@@ -73,7 +73,6 @@ export function findStableDropSlot(
   slots: DragSlot[],
   pointerX: number,
   pointerY: number,
-  current?: { targetId: string; side: DropSide } | null,
 ): { slot: DragSlot; side: DropSide } | null {
   let closest: { slot: DragSlot; distance: number } | null = null
   for (const slot of slots) {
@@ -82,20 +81,8 @@ export function findStableDropSlot(
   }
   if (!closest) return null
 
-  const currentSlot = current && slots.find((slot) => slot.targetId === current.targetId)
-  if (currentSlot && distanceToSlot(currentSlot, pointerX, pointerY) <= closest.distance + 18) {
-    closest = { slot: currentSlot, distance: distanceToSlot(currentSlot, pointerX, pointerY) }
-  }
-
   const width = Math.max(1, closest.slot.right - closest.slot.left)
   const relativeX = (pointerX - closest.slot.left) / width
-  let side: DropSide
-  if (current?.targetId === closest.slot.targetId) {
-    side = current.side === 'before'
-      ? relativeX > 0.68 ? 'after' : 'before'
-      : relativeX < 0.32 ? 'before' : 'after'
-  } else {
-    side = relativeX < 0.5 ? 'before' : 'after'
-  }
+  const side: DropSide = relativeX < 0.5 ? 'before' : 'after'
   return { slot: closest.slot, side }
 }

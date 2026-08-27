@@ -10,7 +10,7 @@ import {
   type ConcreteFileCategory,
   type FileCategory,
 } from './browser-files'
-import { advanceSelectionPath, findStableDropSlot, getRemainingInsertionIndex, hasMovedOneGridCell, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
+import { advanceSelectionPath, findStableDropSlot, getRemainingInsertionIndex, hasMovedHalfGridCell, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
 
 type AutomaticSortRule =
   | 'created-asc'
@@ -434,7 +434,7 @@ export default function App() {
     const galleryBounds = gallery.getBoundingClientRect()
     const pointerX = clientX - galleryBounds.left + gallery.scrollLeft
     const pointerY = clientY - galleryBounds.top + gallery.scrollTop
-    const match = findStableDropSlot(dragSlots.current, pointerX, pointerY, currentDropPosition.current)
+    const match = findStableDropSlot(dragSlots.current, pointerX, pointerY)
     if (!match) return null
     const targetIndex = Number(match.slot.targetId)
     if (!Number.isInteger(targetIndex)) return null
@@ -506,7 +506,7 @@ export default function App() {
       const firstSlot = dragLayoutSlots.current[0]
       const thresholdX = firstSlot ? firstSlot.right - firstSlot.left : 145
       const thresholdY = firstSlot ? firstSlot.bottom - firstSlot.top : 180
-      if (!hasMovedOneGridCell(
+      if (!hasMovedHalfGridCell(
         gesture.lastX - gesture.startX,
         gesture.lastY - gesture.startY,
         thresholdX,
@@ -609,7 +609,7 @@ export default function App() {
     gesture.lastX = clientX
     gesture.lastY = clientY
     scheduleBatchDragFrame()
-    setMessage(`已提起 ${draggedBatchIds.current.length} 个文件；移动至少一个网格后开始排序。`)
+    setMessage(`已提起 ${draggedBatchIds.current.length} 个文件；移动半个网格后开始排序。`)
   }
 
   function startBatchPointerGesture(event: ReactPointerEvent<HTMLButtonElement>, id: string) {
@@ -662,7 +662,7 @@ export default function App() {
         setOrderedIds(insertBatchAtRemainingIndex(dragOriginIds.current, moving, position.insertionIndex))
         setMessage(`已在文件间隙插入 ${moving.length} 个文件。`)
       } else {
-        setMessage('移动距离不足一个网格，文件顺序未改变。')
+        setMessage('移动距离不足半个网格，文件顺序未改变。')
       }
     } else {
       setBatchSelectedIds((current) => current.filter((item) => item !== gesture.sourceId))

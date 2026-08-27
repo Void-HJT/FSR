@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceSelectionPath, findStableDropSlot, getBatchInsertionIndex, getRemainingInsertionIndex, hasMovedOneGridCell, insertBatchAtRemainingIndex } from './order-utils'
+import { advanceSelectionPath, findStableDropSlot, getBatchInsertionIndex, getRemainingInsertionIndex, hasMovedHalfGridCell, insertBatchAtRemainingIndex } from './order-utils'
 
 describe('insertBatchAtRemainingIndex', () => {
   it('inserts a non-contiguous group into the remaining-file sequence', () => {
@@ -71,12 +71,12 @@ describe('getRemainingInsertionIndex', () => {
   })
 })
 
-describe('hasMovedOneGridCell', () => {
-  it('activates only after the pointer travels one normalized grid length', () => {
-    expect(hasMovedOneGridCell(99, 0, 100, 180)).toBe(false)
-    expect(hasMovedOneGridCell(100, 0, 100, 180)).toBe(true)
-    expect(hasMovedOneGridCell(0, 180, 100, 180)).toBe(true)
-    expect(hasMovedOneGridCell(80, 108, 100, 180)).toBe(true)
+describe('hasMovedHalfGridCell', () => {
+  it('activates after the pointer travels half a normalized grid length', () => {
+    expect(hasMovedHalfGridCell(49, 0, 100, 180)).toBe(false)
+    expect(hasMovedHalfGridCell(50, 0, 100, 180)).toBe(true)
+    expect(hasMovedHalfGridCell(0, 90, 100, 180)).toBe(true)
+    expect(hasMovedHalfGridCell(40, 54, 100, 180)).toBe(true)
   })
 })
 
@@ -86,14 +86,14 @@ describe('findStableDropSlot', () => {
     { targetId: 'b', left: 110, right: 210, top: 0, bottom: 100 },
   ]
 
-  it('keeps both the left and right side stable until the pointer clearly crosses the middle', () => {
-    expect(findStableDropSlot(slots, 150, 50, { targetId: 'b', side: 'after' })).toMatchObject({
-      slot: { targetId: 'b' },
-      side: 'after',
-    })
-    expect(findStableDropSlot(slots, 170, 50, { targetId: 'b', side: 'before' })).toMatchObject({
+  it('switches insertion side exactly at the middle of a grid cell', () => {
+    expect(findStableDropSlot(slots, 159, 50)).toMatchObject({
       slot: { targetId: 'b' },
       side: 'before',
+    })
+    expect(findStableDropSlot(slots, 160, 50)).toMatchObject({
+      slot: { targetId: 'b' },
+      side: 'after',
     })
   })
 
@@ -104,10 +104,10 @@ describe('findStableDropSlot', () => {
     })
   })
 
-  it('keeps the current right-edge target when a nearby slot is only slightly closer', () => {
-    expect(findStableDropSlot(slots, 106, 50, { targetId: 'a', side: 'after' })).toMatchObject({
-      slot: { targetId: 'a' },
-      side: 'after',
+  it('switches to the nearest grid cell without an extra edge delay', () => {
+    expect(findStableDropSlot(slots, 106, 50)).toMatchObject({
+      slot: { targetId: 'b' },
+      side: 'before',
     })
   })
 
