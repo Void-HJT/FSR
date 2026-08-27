@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, insertBatchAtRemainingIndex } from './order-utils'
+import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, getBatchInsertionIndex, insertBatchAtRemainingIndex } from './order-utils'
 
 describe('insertBatchAtRemainingIndex', () => {
   it('inserts a non-contiguous group into the remaining-file sequence', () => {
@@ -38,6 +38,17 @@ describe('advanceSelectionPath', () => {
       toggledIds: ['c', 'b'],
     })
     expect(advanceSelectionPath(['a'], 'a')).toEqual({ path: [], toggledIds: ['a'] })
+  })
+})
+
+describe('getBatchInsertionIndex', () => {
+  it('uses the first moving file as the absolute insertion anchor across rows', () => {
+    expect(getBatchInsertionIndex(14, 3, 5, 'after')).toBe(6)
+    expect(getBatchInsertionIndex(14, 3, 6, 'before')).toBe(6)
+  })
+
+  it('clamps the first moving file to the final available start position', () => {
+    expect(getBatchInsertionIndex(14, 3, 13, 'after')).toBe(11)
   })
 })
 

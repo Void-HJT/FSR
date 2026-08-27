@@ -10,7 +10,7 @@ import {
   type ConcreteFileCategory,
   type FileCategory,
 } from './browser-files'
-import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
+import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, getBatchInsertionIndex, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
 
 type AutomaticSortRule =
   | 'created-asc'
@@ -154,6 +154,7 @@ export default function App() {
   const customCompletionPending = useRef(false)
   const draggedBatchIds = useRef<string[]>([])
   const dragOriginIds = useRef<string[]>([])
+  const dragLayoutSlots = useRef<DragSlot[]>([])
   const dragSlots = useRef<DragSlot[]>([])
   const currentDropPosition = useRef<DropPosition | null>(null)
   const dragGhost = useRef<HTMLElement | null>(null)
@@ -405,19 +406,17 @@ export default function App() {
     const gallery = galleryRef.current
     if (!gallery) return
     const galleryBounds = gallery.getBoundingClientRect()
-    dragSlots.current = excludeMovingDragSlots(
-      Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card) => {
-        const bounds = card.getBoundingClientRect()
-        return {
-          targetId: card.dataset.fileId!,
-          left: bounds.left - galleryBounds.left + gallery.scrollLeft,
-          right: bounds.right - galleryBounds.left + gallery.scrollLeft,
-          top: bounds.top - galleryBounds.top + gallery.scrollTop,
-          bottom: bounds.bottom - galleryBounds.top + gallery.scrollTop,
-        }
-      }),
-      draggedBatchIds.current,
-    )
+    dragLayoutSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card) => {
+      const bounds = card.getBoundingClientRect()
+      return {
+        targetId: card.dataset.fileId!,
+        left: bounds.left - galleryBounds.left + gallery.scrollLeft,
+        right: bounds.right - galleryBounds.left + gallery.scrollLeft,
+        top: bounds.top - galleryBounds.top + gallery.scrollTop,
+        bottom: bounds.bottom - galleryBounds.top + gallery.scrollTop,
+      }
+    })
+    dragSlots.current = excludeMovingDragSlots(dragLayoutSlots.current, draggedBatchIds.current)
   }
 
   function getDropPosition(clientX: number, clientY: number): DropPosition | null {
@@ -430,13 +429,22 @@ export default function App() {
     if (!match) return null
     const targetIndex = dragOriginIds.current.indexOf(match.slot.targetId)
     if (targetIndex < 0) return null
+    const insertionIndex = getBatchInsertionIndex(
+      dragOriginIds.current.length,
+      draggedBatchIds.current.length,
+      targetIndex,
+      match.side,
+    )
+    const markerTargetId = dragOriginIds.current[insertionIndex]
+    const markerSlot = dragLayoutSlots.current.find((slot) => slot.targetId === markerTargetId)
+    if (!markerSlot) return null
     return {
       targetId: match.slot.targetId,
       side: match.side,
-      insertionIndex: targetIndex + (match.side === 'after' ? 1 : 0),
-      markerLeft: match.side === 'before' ? match.slot.left : match.slot.right,
-      markerTop: match.slot.top,
-      markerHeight: match.slot.bottom - match.slot.top,
+      insertionIndex,
+      markerLeft: markerSlot.left,
+      markerTop: markerSlot.top,
+      markerHeight: markerSlot.bottom - markerSlot.top,
     }
   }
 
@@ -467,6 +475,7 @@ export default function App() {
     if (gesture?.holdTimer != null) window.clearTimeout(gesture.holdTimer)
     draggedBatchIds.current = []
     dragOriginIds.current = []
+    dragLayoutSlots.current = []
     dragSlots.current = []
     currentDropPosition.current = null
     dragGhost.current?.remove()

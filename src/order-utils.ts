@@ -34,6 +34,16 @@ export function excludeMovingDragSlots(slots: DragSlot[], movingIds: string[]): 
 
 export type DropSide = 'before' | 'after'
 
+export function getBatchInsertionIndex(
+  orderLength: number,
+  movingCount: number,
+  targetIndex: number,
+  side: DropSide,
+): number {
+  const requested = targetIndex + (side === 'after' ? 1 : 0)
+  return Math.max(0, Math.min(Math.max(0, orderLength - movingCount), requested))
+}
+
 function distanceToSlot(slot: DragSlot, pointerX: number, pointerY: number): number {
   const horizontalDistance = pointerX < slot.left
     ? slot.left - pointerX
