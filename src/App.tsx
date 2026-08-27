@@ -10,7 +10,7 @@ import {
   type ConcreteFileCategory,
   type FileCategory,
 } from './browser-files'
-import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, getBatchInsertionIndex, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
+import { advanceSelectionPath, findStableDropSlot, getGridBatchInsertionIndex, insertBatchAtRemainingIndex, type DragSlot } from './order-utils'
 
 type AutomaticSortRule =
   | 'created-asc'
@@ -156,6 +156,7 @@ export default function App() {
   const dragOriginIds = useRef<string[]>([])
   const dragLayoutSlots = useRef<DragSlot[]>([])
   const dragSlots = useRef<DragSlot[]>([])
+  const currentBatchInsertionIndex = useRef(0)
   const dragFrame = useRef<number | null>(null)
   const dragLayoutDirty = useRef(false)
   const dragResizeObserver = useRef<ResizeObserver | null>(null)
@@ -412,16 +413,15 @@ export default function App() {
     const gallery = galleryRef.current
     if (!gallery) return
     dragLayoutSlots.current = Array.from(gallery.querySelectorAll<HTMLElement>('[data-file-id]')).map((card, index) => {
-      const targetId = dragOriginIds.current[index] ?? card.dataset.fileId ?? ''
       return {
-        targetId,
+        targetId: String(index),
         left: card.offsetLeft,
         right: card.offsetLeft + card.offsetWidth,
         top: card.offsetTop,
         bottom: card.offsetTop + card.offsetHeight,
       }
-    }).filter((slot) => Boolean(slot.targetId))
-    dragSlots.current = excludeMovingDragSlots(dragLayoutSlots.current, draggedBatchIds.current)
+    })
+    dragSlots.current = dragLayoutSlots.current
     dragLayoutDirty.current = false
   }
 
@@ -433,17 +433,18 @@ export default function App() {
     const pointerY = clientY - galleryBounds.top + gallery.scrollTop
     const match = findStableDropSlot(dragSlots.current, pointerX, pointerY, currentDropPosition.current)
     if (!match) return null
-    const targetIndex = dragOriginIds.current.indexOf(match.slot.targetId)
-    if (targetIndex < 0) return null
-    const insertionIndex = getBatchInsertionIndex(
+    const targetIndex = Number(match.slot.targetId)
+    if (!Number.isInteger(targetIndex)) return null
+    const insertionIndex = getGridBatchInsertionIndex(
       dragOriginIds.current.length,
       draggedBatchIds.current.length,
       targetIndex,
       match.side,
+      currentBatchInsertionIndex.current,
     )
-    const markerTargetId = dragOriginIds.current[insertionIndex]
-    const markerSlot = dragLayoutSlots.current.find((slot) => slot.targetId === markerTargetId)
+    const markerSlot = dragLayoutSlots.current[insertionIndex]
     if (!markerSlot) return null
+    currentBatchInsertionIndex.current = insertionIndex
     return {
       targetId: match.slot.targetId,
       side: match.side,
@@ -522,6 +523,7 @@ export default function App() {
     if (gesture?.holdTimer != null) window.clearTimeout(gesture.holdTimer)
     draggedBatchIds.current = []
     dragOriginIds.current = []
+    currentBatchInsertionIndex.current = 0
     if (dragFrame.current !== null) window.cancelAnimationFrame(dragFrame.current)
     dragFrame.current = null
     dragLayoutDirty.current = false
@@ -547,6 +549,10 @@ export default function App() {
     const selected = new Set(batchSelectedIds)
     draggedBatchIds.current = orderedIds.filter((item) => selected.has(item))
     dragOriginIds.current = [...orderedIds]
+    const firstMovingIndex = dragOriginIds.current.indexOf(draggedBatchIds.current[0])
+    currentBatchInsertionIndex.current = dragOriginIds.current
+      .slice(0, Math.max(0, firstMovingIndex))
+      .filter((id) => !selected.has(id)).length
     currentDropPosition.current = null
     setDropPosition(null)
     captureDragSlots()

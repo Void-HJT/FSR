@@ -27,11 +27,6 @@ export interface DragSlot {
   bottom: number
 }
 
-export function excludeMovingDragSlots(slots: DragSlot[], movingIds: string[]): DragSlot[] {
-  const moving = new Set(movingIds)
-  return slots.filter((slot) => !moving.has(slot.targetId))
-}
-
 export type DropSide = 'before' | 'after'
 
 export function getBatchInsertionIndex(
@@ -42,6 +37,18 @@ export function getBatchInsertionIndex(
 ): number {
   const requested = targetIndex + (side === 'after' ? 1 : 0)
   return Math.max(0, Math.min(Math.max(0, orderLength - movingCount), requested))
+}
+
+export function getGridBatchInsertionIndex(
+  orderLength: number,
+  movingCount: number,
+  targetIndex: number,
+  side: DropSide,
+  currentInsertionIndex: number,
+): number {
+  const currentEnd = currentInsertionIndex + movingCount - 1
+  if (targetIndex >= currentInsertionIndex && targetIndex <= currentEnd) return currentInsertionIndex
+  return getBatchInsertionIndex(orderLength, movingCount, targetIndex, side)
 }
 
 function distanceToSlot(slot: DragSlot, pointerX: number, pointerY: number): number {

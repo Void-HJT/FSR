@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceSelectionPath, excludeMovingDragSlots, findStableDropSlot, getBatchInsertionIndex, insertBatchAtRemainingIndex } from './order-utils'
+import { advanceSelectionPath, findStableDropSlot, getBatchInsertionIndex, getGridBatchInsertionIndex, insertBatchAtRemainingIndex } from './order-utils'
 
 describe('insertBatchAtRemainingIndex', () => {
   it('inserts a non-contiguous group into the remaining-file sequence', () => {
@@ -52,6 +52,26 @@ describe('getBatchInsertionIndex', () => {
   })
 })
 
+describe('getGridBatchInsertionIndex', () => {
+  it('uses the current grid position after the remaining files move forward', () => {
+    const insertionIndex = getGridBatchInsertionIndex(14, 3, 2, 'after', 6)
+    const result = insertBatchAtRemainingIndex(
+      Array.from({ length: 14 }, (_, index) => String(index + 1)),
+      ['1', '2', '3'],
+      insertionIndex,
+    )
+
+    expect(insertionIndex).toBe(3)
+    expect(result.slice(0, 6)).toEqual(['4', '5', '6', '1', '2', '3'])
+  })
+
+  it('treats every cell occupied by the moving group as its first position', () => {
+    expect(getGridBatchInsertionIndex(14, 3, 6, 'before', 6)).toBe(6)
+    expect(getGridBatchInsertionIndex(14, 3, 7, 'after', 6)).toBe(6)
+    expect(getGridBatchInsertionIndex(14, 3, 8, 'after', 6)).toBe(6)
+  })
+})
+
 describe('findStableDropSlot', () => {
   const slots = [
     { targetId: 'a', left: 0, right: 100, top: 0, bottom: 100 },
@@ -83,14 +103,4 @@ describe('findStableDropSlot', () => {
     })
   })
 
-  it('cannot target any position belonging to the moving group', () => {
-    const available = excludeMovingDragSlots([
-      ...slots,
-      { targetId: 'c', left: 220, right: 320, top: 0, bottom: 100 },
-      { targetId: 'd', left: 330, right: 430, top: 0, bottom: 100 },
-    ], ['b', 'c', 'd'])
-
-    expect(available.map((slot) => slot.targetId)).toEqual(['a'])
-    expect(findStableDropSlot(available, 275, 50)).toMatchObject({ slot: { targetId: 'a' } })
-  })
 })
